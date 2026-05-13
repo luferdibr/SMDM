@@ -4,14 +4,15 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>9206dfda-1dfb-4ed8-896a-95cbd3f0d96f</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>database\test_connection.py</StartupFile>
+    <StartupFile>main.py</StartupFile>
     <SearchPath>
     </SearchPath>
-    <WorkingDirectory>.</WorkingDirectory>
+    <WorkingDirectory>G:\lufer\source\repos\SMMPV\SMMPV</WorkingDirectory>
     <OutputPath>.</OutputPath>
     <Name>SMMPV</Name>
     <RootNamespace>SMMPV</RootNamespace>
     <TestFramework>Pytest</TestFramework>
+    <IsWindowsApplication>False</IsWindowsApplication>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -23,16 +24,79 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="config\settings.py" />
+    <Compile Include="config\__init__.py" />
+    <Compile Include="core\api_contracts.py" />
+    <Compile Include="core\api_server.py" />
+    <Compile Include="core\app_config.py" />
+    <Compile Include="core\background_jobs.py" />
+    <Compile Include="core\billing_manager.py" />
+    <Compile Include="core\cache.py" />
+    <Compile Include="core\cloud_sync.py" />
+    <Compile Include="core\config_manager.py" />
+    <Compile Include="core\constants.py" />
+    <Compile Include="core\deployment_manager.py" />
+    <Compile Include="core\diagnostics.py" />
+    <Compile Include="core\distributed_workers.py" />
+    <Compile Include="core\event_bus.py" />
+    <Compile Include="core\exceptions.py" />
+    <Compile Include="core\logger.py" />
+    <Compile Include="core\middleware.py" />
+    <Compile Include="core\navigation.py" />
+    <Compile Include="core\orchestrator.py" />
+    <Compile Include="core\plugin_manager.py" />
+    <Compile Include="core\responses.py" />
+    <Compile Include="core\scheduler.py" />
+    <Compile Include="core\service_registry.py" />
+    <Compile Include="core\session.py" />
+    <Compile Include="core\telemetry.py" />
+    <Compile Include="core\tenant_manager.py" />
+    <Compile Include="core\themes.py" />
+    <Compile Include="core\validators.py" />
+    <Compile Include="core\version.py" />
+    <Compile Include="core\security.py" />
+    <Compile Include="core\websocket_server.py" />
+    <Compile Include="core\__init__.py" />
     <Compile Include="database\connection.py" />
+    <Compile Include="database\setup_temp.py" />
     <Compile Include="database\test_connection.py" />
+    <Compile Include="database\__init__.py" />
     <Compile Include="main.py" />
     <Compile Include="services\auth_service.py" />
+    <Compile Include="services\bootstrap_service.py" />
+    <Compile Include="services\install_service.py" />
+    <Compile Include="services\local_service.py" />
+    <Compile Include="services\loc_ambientes_service.py" />
+    <Compile Include="services\loc_estrutura_service.py" />
+    <Compile Include="services\menu_admin_service.py" />
+    <Compile Include="services\menu_editor_service.py" />
+    <Compile Include="services\menu_service.py" />
+    <Compile Include="services\loc_tipo_service.py" />
+    <Compile Include="services\perfil_service.py" />
+    <Compile Include="services\user_service.py" />
+    <Compile Include="services\__init__.py" />
     <Compile Include="SMMPV.py" />
+    <Compile Include="ui\alterar_senha.py" />
+    <Compile Include="services\auditoria_service.py" />
+    <Compile Include="ui\dashboard.py" />
+    <Compile Include="ui\locais.py" />
+    <Compile Include="ui\local_form.py" />
+    <Compile Include="ui\loc_estruturas.py" />
     <Compile Include="ui\login.py" />
+    <Compile Include="ui\menu_admin.py" />
+    <Compile Include="ui\menu_editor.py" />
+    <Compile Include="ui\loc_tipos.py" />
+    <Compile Include="ui\loc_ambientes.py" />
+    <Compile Include="ui\perfis.py" />
+    <Compile Include="ui\usuarios.py" />
+    <Compile Include="UI\__init__.py" />
+    <Compile Include="utils\gerar_hash.py" />
+    <Compile Include="utils\__init__.py" />
+    <Compile Include="__init__.py" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="config\" />
     <Folder Include="database\" />
+    <Folder Include="core\" />
     <Folder Include="utils\" />
     <Folder Include="ui\" />
     <Folder Include="services\" />
