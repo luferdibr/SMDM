@@ -1,26 +1,26 @@
 
 import logging
 
-from database.connection import get_connection
+from config.settings import (
+    ADMIN_CONFIG
+)
 
-from services.auth_service import gerar_hash
+from database.connection import (
+    get_connection
+)
 
-from services.auditoria_service import registrar_evento
+from security.password_service import (
+    gerar_hash
+)
 
-from config.settings import ADMIN_CONFIG
+from services.auditoria_service import (
+    registrar_evento_sistema
+)
 
 
 # ==================================================
 # CONFIG
 # ==================================================
-
-LOGIN_ADMIN = ADMIN_CONFIG["login"]
-
-SENHA_ADMIN = ADMIN_CONFIG["password"]
-
-FORCAR_TROCA_ADMIN = bool(
-    ADMIN_CONFIG["force_change"]
-)
 
 ROOT_LEVEL = 100
 
@@ -28,10 +28,58 @@ ADMIN_LEVEL = 50
 
 
 # ==================================================
+# ROOT
+# ==================================================
+
+LOGIN_ROOT = ADMIN_CONFIG[
+    "root_login"
+]
+
+NOME_ROOT = ADMIN_CONFIG[
+    "root_nome"
+]
+
+SENHA_ROOT = ADMIN_CONFIG[
+    "root_senha"
+]
+
+
+# ==================================================
+# ADMIN
+# ==================================================
+
+LOGIN_ADMIN = ADMIN_CONFIG[
+    "admin_login"
+]
+
+NOME_ADMIN = ADMIN_CONFIG[
+    "admin_nome"
+]
+
+SENHA_ADMIN = ADMIN_CONFIG[
+    "admin_senha"
+]
+
+
+# ==================================================
+# LOGGER
+# ==================================================
+
+LOGGER = logging.getLogger(
+    "MDM_BOOTSTRAP"
+)
+
+
+# ==================================================
 # HELPERS
 # ==================================================
 
-def tabela_existe(cursor, tabela):
+def existe_tabela(
+
+    cursor,
+
+    tabela
+):
 
     cursor.execute("""
 
@@ -46,395 +94,670 @@ def tabela_existe(cursor, tabela):
     return cursor.fetchone()[0] > 0
 
 
-# ==================================================
-# VALIDAR ESTRUTURA
-# ==================================================
+def existe_registro(
 
-def validar_estrutura(cursor):
+    cursor,
 
-    tabelas = [
+    tabela,
 
-        "Perfis",
+    campo,
 
-        "Usuarios",
+    valor
+):
 
-        "Menu",
-
-        "PerfilMenu",
-
-        "Auditoria"
-    ]
-
-    for tabela in tabelas:
-
-        if not tabela_existe(
-            cursor,
-            tabela
-        ):
-
-            raise Exception(
-                f"Tabela obrigatória ausente: {tabela}"
-            )
-
-
-# ==================================================
-# VALIDAR PERFIS
-# ==================================================
-
-def validar_perfis(cursor):
-
-    cursor.execute("""
-
-        SELECT
-            Id,
-            Nome,
-            AdminLevel,
-            Sistema
-
-        FROM Perfis
-
-        ORDER BY Id
-
-    """)
-
-    rows = cursor.fetchall()
-
-    if not rows:
-
-        raise Exception(
-            "Nenhum perfil encontrado."
-        )
-
-    perfis = {}
-
-    for r in rows:
-
-        perfis[r[0]] = {
-
-            "nome": r[1],
-
-            "level": int(r[2]),
-
-            "sistema": bool(r[3])
-        }
-
-    # ==============================================
-    # ROOT
-    # ==============================================
-
-    root = perfis.get(1)
-
-    if not root:
-
-        raise Exception(
-            "Perfil ROOT inexistente."
-        )
-
-    if root["nome"] != "ROOT":
-
-        raise Exception(
-            "Perfil 1 deve ser ROOT."
-        )
-
-    if root["level"] < ROOT_LEVEL:
-
-        raise Exception(
-            "ROOT inválido."
-        )
-
-    if not root["sistema"]:
-
-        raise Exception(
-            "ROOT deve ser estrutural."
-        )
-
-    # ==============================================
-    # ADMIN
-    # ==============================================
-
-    admin = perfis.get(2)
-
-    if not admin:
-
-        raise Exception(
-            "Perfil ADMIN inexistente."
-        )
-
-    if admin["nome"] != "ADMIN":
-
-        raise Exception(
-            "Perfil 2 deve ser ADMIN."
-        )
-
-    if admin["level"] < ADMIN_LEVEL:
-
-        raise Exception(
-            "ADMIN inválido."
-        )
-
-
-# ==================================================
-# VALIDAR MENUS
-# ==================================================
-
-def validar_menus(cursor):
-
-    cursor.execute("""
+    cursor.execute(f"""
 
         SELECT COUNT(*)
 
-        FROM Menu
+        FROM {tabela}
 
-        WHERE Ativo = 1
+        WHERE {campo} = ?
 
-    """)
+    """, (valor,))
 
-    total = cursor.fetchone()[0]
+    return cursor.fetchone()[0] > 0
 
-    if total <= 0:
 
-        raise Exception(
-            "Nenhum menu ativo encontrado."
+# ==================================================
+# PERFIS
+# ==================================================
+
+def garantir_perfis(cursor):
+
+    perfis = [
+
+        {
+
+            "nome": "ROOT",
+
+            "admin_level": ROOT_LEVEL,
+
+            "sistema": 1
+        },
+
+        {
+
+            "nome": "ADMIN",
+
+            "admin_level": ADMIN_LEVEL,
+
+            "sistema": 1
+        },
+
+        {
+
+            "nome": "OPERADOR",
+
+            "admin_level": 10,
+
+            "sistema": 1
+        }
+    ]
+
+    for perfil in perfis:
+
+        if existe_registro(
+
+            cursor,
+
+            "Perfis",
+
+            "Nome",
+
+            perfil["nome"]
+        ):
+
+            continue
+
+        cursor.execute("""
+
+            INSERT INTO Perfis
+            (
+                Nome,
+                AdminLevel,
+                Sistema,
+                Ativo,
+                ValidadeSenhaDias
+            )
+
+            VALUES (?, ?, ?, 1, 90)
+
+        """, (
+
+            perfil["nome"],
+
+            perfil["admin_level"],
+
+            perfil["sistema"]
+        ))
+
+        LOGGER.info(
+
+            (
+                f"Perfil criado: "
+                f"{perfil['nome']}"
+            )
         )
 
 
 # ==================================================
-# GARANTIR ROOT
+# GET PERFIL
 # ==================================================
 
-def garantir_root(cursor):
+def get_perfil_id(
+
+    cursor,
+
+    nome
+):
 
     cursor.execute("""
 
-        SELECT
-            Id
+        SELECT TOP 1 Id
 
-        FROM Usuarios
+        FROM Perfis
 
-        WHERE UPPER(Login) = 'ROOT'
+        WHERE Nome = ?
 
-    """)
-
-    row = cursor.fetchone()
-
-    if row:
-
-        return row[0]
-
-    logging.warning(
-        "Usuário ROOT inexistente."
-    )
-
-    senha_hash = gerar_hash(
-        SENHA_ADMIN
-    )
-
-    cursor.execute("""
-
-        INSERT INTO Usuarios
-        (
-            Login,
-            Nome,
-            SenhaHash,
-            PerfilId,
-            Ativo,
-            Bloqueado,
-            TentativasLogin,
-            DeveTrocarSenha,
-            SenhaTemporaria,
-            SenhaMigrada
-        )
-
-        VALUES
-        (
-            'ROOT',
-            'ROOT',
-            ?,
-            1,
-            1,
-            0,
-            0,
-            ?,
-            ?,
-            0
-        )
-
-    """, (
-
-        senha_hash,
-
-        int(FORCAR_TROCA_ADMIN),
-
-        int(FORCAR_TROCA_ADMIN)
-    ))
-
-    registrar_evento(
-
-        login="BOOTSTRAP",
-
-        acao="CRIAR_ROOT",
-
-        entidade="Usuarios",
-
-        detalhes="Usuário ROOT criado automaticamente"
-    )
-
-    logging.info(
-        "Usuário ROOT criado."
-    )
-
-    return True
-
-
-# ==================================================
-# GARANTIR ADMIN
-# ==================================================
-
-def garantir_admin(cursor):
-
-    cursor.execute("""
-
-        SELECT
-            Id
-
-        FROM Usuarios
-
-        WHERE UPPER(Login) = UPPER(?)
-
-    """, (LOGIN_ADMIN,))
-
-    row = cursor.fetchone()
-
-    if row:
-
-        return row[0]
-
-    logging.warning(
-        "Usuário ADMIN inexistente."
-    )
-
-    senha_hash = gerar_hash(
-        SENHA_ADMIN
-    )
-
-    cursor.execute("""
-
-        INSERT INTO Usuarios
-        (
-            Login,
-            Nome,
-            SenhaHash,
-            PerfilId,
-            Ativo,
-            Bloqueado,
-            TentativasLogin,
-            DeveTrocarSenha,
-            SenhaTemporaria,
-            SenhaMigrada
-        )
-
-        VALUES
-        (
-            ?, ?,
-            ?,
-            2,
-            1,
-            0,
-            0,
-            ?,
-            ?,
-            0
-        )
-
-    """, (
-
-        LOGIN_ADMIN,
-
-        LOGIN_ADMIN,
-
-        senha_hash,
-
-        int(FORCAR_TROCA_ADMIN),
-
-        int(FORCAR_TROCA_ADMIN)
-    ))
-
-    registrar_evento(
-
-        login="BOOTSTRAP",
-
-        acao="CRIAR_ADMIN",
-
-        entidade="Usuarios",
-
-        detalhes="Usuário ADMIN criado automaticamente"
-    )
-
-    logging.info(
-        "Usuário ADMIN criado."
-    )
-
-    return True
-
-
-# ==================================================
-# VALIDAR ROOT USER
-# ==================================================
-
-def validar_root_usuario(cursor):
-
-    cursor.execute("""
-
-        SELECT
-            u.Id,
-            u.PerfilId,
-            p.AdminLevel,
-            p.Sistema
-
-        FROM Usuarios u
-
-        INNER JOIN Perfis p
-            ON p.Id = u.PerfilId
-
-        WHERE UPPER(u.Login) = 'ROOT'
-
-    """)
+    """, (nome,))
 
     row = cursor.fetchone()
 
     if not row:
 
         raise Exception(
-            "Usuário ROOT inexistente."
+            f"Perfil não encontrado: {nome}"
         )
 
-    perfil_id = row[1]
+    return row[0]
 
-    level = int(row[2])
 
-    sistema = bool(row[3])
+# ==================================================
+# USERS
+# ==================================================
 
-    if perfil_id != 1:
+def garantir_root(cursor):
 
-        raise Exception(
-            "ROOT deve usar PerfilId=1."
+    if existe_registro(
+
+        cursor,
+
+        "Usuarios",
+
+        "Login",
+
+        LOGIN_ROOT
+    ):
+
+        return
+
+    perfil_id = get_perfil_id(
+
+        cursor,
+
+        "ROOT"
+    )
+
+    senha_hash = gerar_hash(
+        SENHA_ROOT
+    )
+
+    cursor.execute("""
+
+        INSERT INTO Usuarios
+        (
+            Login,
+            Nome,
+            SenhaHash,
+            PerfilId,
+            Ativo,
+            Bloqueado,
+            TentativasLogin,
+            DeveTrocarSenha,
+            SenhaTemporaria
         )
 
-    if level < ROOT_LEVEL:
-
-        raise Exception(
-            "ROOT inválido."
+        VALUES
+        (
+            ?, ?, ?, ?,
+            1, 0, 0, 0, 0
         )
 
-    if not sistema:
+    """, (
 
-        raise Exception(
-            "ROOT não estrutural."
+        LOGIN_ROOT,
+
+        NOME_ROOT,
+
+        senha_hash,
+
+        perfil_id
+    ))
+
+    LOGGER.info(
+        "Usuário ROOT criado."
+    )
+
+
+def garantir_admin(cursor):
+
+    if existe_registro(
+
+        cursor,
+
+        "Usuarios",
+
+        "Login",
+
+        LOGIN_ADMIN
+    ):
+
+        return
+
+    perfil_id = get_perfil_id(
+
+        cursor,
+
+        "ADMIN"
+    )
+
+    senha_hash = gerar_hash(
+        SENHA_ADMIN
+    )
+
+    cursor.execute("""
+
+        INSERT INTO Usuarios
+        (
+            Login,
+            Nome,
+            SenhaHash,
+            PerfilId,
+            Ativo,
+            Bloqueado,
+            TentativasLogin,
+            DeveTrocarSenha,
+            SenhaTemporaria
+        )
+
+        VALUES
+        (
+            ?, ?, ?, ?,
+            1, 0, 0, 1, 1
+        )
+
+    """, (
+
+        LOGIN_ADMIN,
+
+        NOME_ADMIN,
+
+        senha_hash,
+
+        perfil_id
+    ))
+
+    LOGGER.info(
+        "Usuário ADMIN criado."
+    )
+
+
+# ==================================================
+# MENUS
+# ==================================================
+
+
+def garantir_menus(cursor):
+
+    # ==========================================
+    # LIMPEZA CONTROLADA
+    # ==========================================
+
+    cursor.execute("""
+
+        DELETE FROM PerfilMenu
+
+    """)
+
+    cursor.execute("""
+
+        DELETE FROM Menu
+
+    """)
+
+    # ==========================================
+    # MENUS OFICIAIS
+    # ==========================================
+
+    menus = [
+
+        # ======================================
+        # TITULOS (T)
+        # ======================================
+
+        (
+            1,
+            "Dashboard",
+            "dashboard",
+            "T",
+            None,
+            1,
+            1,
+            "DASHBOARD",
+            "CORE",
+            "dashboard",
+            10
+        ),
+
+        (
+            20,
+            "Cadastros",
+            None,
+            "T",
+            None,
+            2,
+            1,
+            "CADASTROS",
+            "CORE",
+            "folder",
+            10
+        ),
+
+        (
+            22,
+            "Eventos",
+            None,
+            "T",
+            None,
+            3,
+            1,
+            "EVENTOS",
+            "CORE",
+            "event",
+            10
+        ),
+
+        (
+            30,
+            "Administração",
+            None,
+            "T",
+            None,
+            99,
+            1,
+            "ADMIN",
+            "CORE",
+            "admin_panel_settings",
+            ADMIN_LEVEL
+        ),
+
+        # ======================================
+        # MENUS (M)
+        # ======================================
+
+        (
+            101,
+            "Locais",
+            None,
+            "M",
+            20,
+            1,
+            2,
+            "LOCAIS",
+            "CORE",
+            "location_city",
+            10
+        ),
+
+        (
+            102,
+            "Segurança",
+            None,
+            "M",
+            30,
+            1,
+            2,
+            "SEGURANCA",
+            "CORE",
+            "security",
+            ADMIN_LEVEL
+        ),
+
+        # ======================================
+        # SUBMENUS (S)
+        # ======================================
+
+        (
+            201,
+            "Cadastro de Locais",
+            "locais",
+            "S",
+            101,
+            1,
+            3,
+            "LOC_CAD",
+            "CORE",
+            "home_work",
+            10
+        ),
+
+        (
+            202,
+            "Ambientes",
+            "loc_ambientes",
+            "S",
+            101,
+            2,
+            3,
+            "LOC_AMB",
+            "CORE",
+            "meeting_room",
+            10
+        ),
+
+        (
+            203,
+            "Tipos de Local",
+            "loc_tipos",
+            "S",
+            101,
+            3,
+            3,
+            "LOC_TIPOS",
+            "CORE",
+            "category",
+            10
+        ),
+
+        (
+            204,
+            "Estruturas",
+            "loc_estruturas",
+            "S",
+            101,
+            4,
+            3,
+            "LOC_ESTRUT",
+            "CORE",
+            "account_tree",
+            10
+        ),
+
+        (
+            205,
+            "Agenda",
+            "agenda",
+            "S",
+            22,
+            1,
+            2,
+            "AGENDA",
+            "CORE",
+            "calendar_month",
+            10
+        ),
+
+        (
+            206,
+            "Orçamentos",
+            "orcamentos",
+            "S",
+            22,
+            2,
+            2,
+            "ORCAMENTOS",
+            "CORE",
+            "request_quote",
+            10
+        ),
+
+        (
+            250,
+            "Usuários",
+            "usuarios",
+            "S",
+            102,
+            1,
+            3,
+            "USUARIOS",
+            "CORE",
+            "people",
+            ADMIN_LEVEL
+        ),
+
+        (
+            251,
+            "Perfis",
+            "perfis",
+            "S",
+            102,
+            2,
+            3,
+            "PERFIS",
+            "CORE",
+            "admin_panel_settings",
+            ADMIN_LEVEL
+        ),
+
+        (
+            252,
+            "Menus",
+            "menu_config",
+            "S",
+            102,
+            3,
+            3,
+            "MENUS",
+            "CORE",
+            "menu",
+            ROOT_LEVEL
+        )
+    ]
+
+    # ==========================================
+    # INSERT
+    # ==========================================
+
+    for menu in menus:
+
+        cursor.execute("""
+
+            INSERT INTO Menu
+            (
+                Id,
+                Nome,
+                Rota,
+                TipoMenu,
+                MenuPaiId,
+                Ordem,
+                Nivel,
+                Codigo,
+                Modulo,
+                Icone,
+                AdminLevel,
+                Ativo,
+                Sistema
+            )
+
+            VALUES
+            (
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, 1, 1
+            )
+
+        """, menu)
+
+        LOGGER.info(
+
+            (
+                f"Menu criado: "
+                f"{menu[1]}"
+            )
         )
 
 
 # ==================================================
-# INICIAR SISTEMA
+# PERMISSOES
+# ==================================================
+
+def garantir_permissoes(cursor):
+
+    cursor.execute("""
+
+        SELECT
+            p.Id,
+            p.AdminLevel,
+            m.Id,
+            m.AdminLevel
+
+        FROM Perfis p
+
+        CROSS JOIN Menu m
+
+    """)
+
+    rows = cursor.fetchall()
+
+    for row in rows:
+
+        perfil_id = row[0]
+
+        perfil_level = int(row[1])
+
+        menu_id = row[2]
+
+        menu_level = int(row[3])
+
+        pode_ver = (
+            perfil_level >= menu_level
+        )
+
+        if not pode_ver:
+            continue
+
+        cursor.execute("""
+
+            SELECT COUNT(*)
+
+            FROM PerfilMenu
+
+            WHERE
+                PerfilId = ?
+                AND
+                MenuId = ?
+
+        """, (
+
+            perfil_id,
+
+            menu_id
+        ))
+
+        existe = (
+            cursor.fetchone()[0] > 0
+        )
+
+        if existe:
+            continue
+
+        pode_editar = (
+            perfil_level >= ADMIN_LEVEL
+        )
+
+        pode_excluir = (
+            perfil_level >= ROOT_LEVEL
+        )
+
+        cursor.execute("""
+
+            INSERT INTO PerfilMenu
+            (
+                PerfilId,
+                MenuId,
+                PodeVer,
+                PodeEditar,
+                PodeExcluir
+            )
+
+            VALUES (?, ?, ?, ?, ?)
+
+        """, (
+
+            perfil_id,
+
+            menu_id,
+
+            int(pode_ver),
+
+            int(pode_editar),
+
+            int(pode_excluir)
+        ))
+
+
+# ==================================================
+# BOOTSTRAP
 # ==================================================
 
 def iniciar_sistema():
@@ -443,7 +766,7 @@ def iniciar_sistema():
 
     try:
 
-        logging.info(
+        LOGGER.info(
             "Inicializando bootstrap..."
         )
 
@@ -452,58 +775,94 @@ def iniciar_sistema():
         cursor = conn.cursor()
 
         # ==========================================
-        # ESTRUTURA
+        # VALIDA
         # ==========================================
 
-        validar_estrutura(cursor)
+        tabelas = [
+
+            "Perfis",
+
+            "Usuarios",
+
+            "Menu",
+
+            "PerfilMenu"
+        ]
+
+        for tabela in tabelas:
+
+            if not existe_tabela(
+
+                cursor,
+
+                tabela
+            ):
+
+                raise Exception(
+
+                    (
+                        f"Tabela não encontrada: "
+                        f"{tabela}"
+                    )
+                )
 
         # ==========================================
         # PERFIS
         # ==========================================
 
-        validar_perfis(cursor)
+        garantir_perfis(cursor)
+
+        # ==========================================
+        # USERS
+        # ==========================================
+
+        garantir_root(cursor)
+
+        garantir_admin(cursor)
 
         # ==========================================
         # MENUS
         # ==========================================
 
-        validar_menus(cursor)
+        garantir_menus(cursor)
 
         # ==========================================
-        # ROOT
+        # PERMISSOES
         # ==========================================
 
-        garantir_root(cursor)
-
-        # ==========================================
-        # ADMIN
-        # ==========================================
-
-        garantir_admin(cursor)
-
-        # ==========================================
-        # VALIDAR ROOT
-        # ==========================================
-
-        validar_root_usuario(cursor)
+        garantir_permissoes(cursor)
 
         conn.commit()
 
-        logging.info(
-            "Bootstrap validado."
+        registrar_evento_sistema(
+
+            "BOOTSTRAP_OK",
+
+            "Bootstrap executado."
         )
 
-    except Exception:
+        LOGGER.info(
+            "Bootstrap concluído."
+        )
+
+        return True
+
+    except Exception as ex:
 
         if conn:
-
             conn.rollback()
 
-        logging.exception(
+        LOGGER.exception(
             "BOOTSTRAP ERROR"
         )
 
-        raise
+        raise Exception(
+
+            (
+                "Erro bootstrap.\n\n"
+                f"{str(ex)}"
+            )
+        )
 
     finally:
 

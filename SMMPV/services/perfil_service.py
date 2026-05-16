@@ -29,57 +29,23 @@ NOMES_RESERVADOS = {
 
 
 # ==================================================
-# HELPERS
+# LOGGER
 # ==================================================
 
-def retorno(
-    sucesso,
-    mensagem="",
-    dados=None
-):
-
-    return {
-
-        "sucesso": bool(sucesso),
-
-        "mensagem": str(mensagem),
-
-        "dados": dados
-    }
+LOGGER = logging.getLogger(
+    "MDM_PERFIL_SERVICE"
+)
 
 
-def auditoria_segura(**kwargs):
-
-    try:
-
-        registrar_evento(**kwargs)
-
-    except Exception:
-
-        logging.exception(
-            "AUDITORIA ERROR"
-        )
-
+# ==================================================
+# HELPERS
+# ==================================================
 
 def normalizar_nome(nome):
 
     return str(
         nome or ""
     ).strip().upper()
-
-
-def is_root(usuario):
-
-    return bool(
-        usuario
-        and
-        int(
-            usuario.get(
-                "admin_level",
-                0
-            )
-        ) >= ROOT_LEVEL
-    )
 
 
 def get_admin_level(usuario):
@@ -95,9 +61,28 @@ def get_admin_level(usuario):
     )
 
 
-# ==================================================
-# PERFIL
-# ==================================================
+def is_root(usuario):
+
+    return (
+
+        get_admin_level(usuario)
+
+        >= ROOT_LEVEL
+    )
+
+
+def auditoria_segura(**kwargs):
+
+    try:
+
+        registrar_evento(**kwargs)
+
+    except Exception:
+
+        LOGGER.exception(
+            "AUDITORIA ERROR"
+        )
+
 
 def map_perfil(row):
 
@@ -107,7 +92,7 @@ def map_perfil(row):
 
         "nome": row[1],
 
-        "validade": row[2],
+        "validade_senha": row[2],
 
         "ativo": bool(row[3]),
 
@@ -117,7 +102,11 @@ def map_perfil(row):
     }
 
 
-def get_perfil(
+# ==================================================
+# PERFIL
+# ==================================================
+
+def obter_perfil(
     cursor,
     perfil_id
 ):
@@ -147,48 +136,7 @@ def get_perfil(
 
 
 # ==================================================
-# VALIDADE
-# ==================================================
-
-def tratar_validade(
-    admin_level,
-    validade
-):
-
-    admin_level = int(
-        admin_level or 0
-    )
-
-    # ==============================================
-    # ROOT NÃO EXPIRA
-    # ==============================================
-
-    if admin_level >= ROOT_LEVEL:
-        return None
-
-    if validade in (
-        None,
-        "",
-        "0"
-    ):
-        return None
-
-    try:
-
-        validade = int(validade)
-
-        if validade < 1:
-            return None
-
-        return validade
-
-    except Exception:
-
-        return None
-
-
-# ==================================================
-# VALIDAR NOME
+# VALIDAÇÕES
 # ==================================================
 
 def validar_nome(nome):
@@ -216,13 +164,63 @@ def validar_nome(nome):
     return nome
 
 
-# ==================================================
-# VALIDAR DUPLICIDADE
-# ==================================================
+def validar_admin_level(admin_level):
+
+    try:
+
+        admin_level = int(
+            admin_level or 0
+        )
+
+    except Exception:
+
+        raise Exception(
+            "Admin level inválido."
+        )
+
+    if admin_level < 1:
+
+        raise Exception(
+            "Admin level inválido."
+        )
+
+    return admin_level
+
+
+def validar_validade(validade):
+
+    if validade in (
+        None,
+        "",
+        "0"
+    ):
+        return None
+
+    try:
+
+        validade = int(validade)
+
+    except Exception:
+
+        raise Exception(
+            "Validade inválida."
+        )
+
+    if validade < 1:
+
+        raise Exception(
+            "Validade inválida."
+        )
+
+    return validade
+
 
 def validar_duplicidade(
+
     cursor,
+
     nome,
+
     perfil_id=None
 ):
 
@@ -241,6 +239,7 @@ def validar_duplicidade(
         """, (
 
             nome,
+
             perfil_id
         ))
 
@@ -263,20 +262,12 @@ def validar_duplicidade(
         )
 
 
-# ==================================================
-# SEGURANÇA
-# ==================================================
+def validar_perfil_alvo(
 
-def validar_permissao_perfil(
-    usuario,
+    usuario_logado,
+
     perfil
 ):
-
-    if not usuario:
-
-        raise Exception(
-            "Usuário inválido."
-        )
 
     if not perfil:
 
@@ -284,20 +275,12 @@ def validar_permissao_perfil(
             "Perfil inválido."
         )
 
-    usuario_level = get_admin_level(
-        usuario
-    )
-
-    # ==============================================
-    # ROOT
-    # ==============================================
-
-    if usuario_level >= ROOT_LEVEL:
+    if is_root(usuario_logado):
         return
 
-    # ==============================================
-    # PERFIL SISTEMA
-    # ==============================================
+    usuario_level = get_admin_level(
+        usuario_logado
+    )
 
     if perfil["sistema"]:
 
@@ -305,50 +288,17 @@ def validar_permissao_perfil(
             "Perfil estrutural protegido."
         )
 
-    # ==============================================
-    # NÍVEL
-    # ==============================================
-
     if perfil["admin_level"] >= usuario_level:
 
         raise Exception(
-            "Sem permissão para alterar este perfil."
+            "Sem permissão para este perfil."
         )
 
-
-def validar_nivel(
-    usuario,
-    admin_level
-):
-
-    admin_level = int(
-        admin_level or 0
-    )
-
-    usuario_level = get_admin_level(
-        usuario
-    )
-
-    # ==============================================
-    # ROOT
-    # ==============================================
-
-    if usuario_level >= ROOT_LEVEL:
-        return
-
-    if admin_level >= usuario_level:
-
-        raise Exception(
-            "Nível administrativo inválido."
-        )
-
-
-# ==================================================
-# PERFIL EM USO
-# ==================================================
 
 def perfil_em_uso(
+
     cursor,
+
     perfil_id
 ):
 
@@ -369,7 +319,7 @@ def perfil_em_uso(
 # LISTAR
 # ==================================================
 
-def listar_perfis(usuario):
+def listar_perfis(filtro=""):
 
     conn = None
 
@@ -379,11 +329,11 @@ def listar_perfis(usuario):
 
         cursor = conn.cursor()
 
-        usuario_level = get_admin_level(
-            usuario
-        )
+        filtro = str(
+            filtro or ""
+        ).strip()
 
-        cursor.execute("""
+        query = """
 
             SELECT
                 Id,
@@ -395,53 +345,54 @@ def listar_perfis(usuario):
 
             FROM Perfis
 
+        """
+
+        params = []
+
+        if filtro:
+
+            query += """
+
+                WHERE Nome LIKE ?
+
+            """
+
+            params.append(
+                f"%{filtro}%"
+            )
+
+        query += """
+
             ORDER BY
                 AdminLevel DESC,
                 Nome
 
-        """)
+        """
+
+        cursor.execute(
+            query,
+            params
+        )
 
         rows = cursor.fetchall()
 
-        perfis = []
+        retorno = []
 
         for row in rows:
 
-            perfil = map_perfil(row)
+            retorno.append(
+                map_perfil(row)
+            )
 
-            # ======================================
-            # ROOT
-            # ======================================
+        return retorno
 
-            if not is_root(usuario):
+    except Exception:
 
-                if perfil["sistema"]:
-                    continue
-
-                if perfil["admin_level"] >= ROOT_LEVEL:
-                    continue
-
-                if perfil["admin_level"] >= usuario_level:
-                    continue
-
-            perfis.append(perfil)
-
-        return retorno(
-            True,
-            dados=perfis
+        LOGGER.exception(
+            "LIST PERFIS ERROR"
         )
 
-    except Exception as ex:
-
-        logging.exception(
-            "PERFIL LIST ERROR"
-        )
-
-        return retorno(
-            False,
-            str(ex),
-            []
-        )
+        raise
 
     finally:
 
@@ -459,12 +410,10 @@ def listar_perfis(usuario):
 # ==================================================
 
 def criar_perfil(
-    usuario,
-    nome,
-    validade,
-    admin_level,
-    ativo=1,
-    sistema=0
+
+    dados,
+
+    usuario_logado
 ):
 
     conn = None
@@ -472,34 +421,55 @@ def criar_perfil(
     try:
 
         nome = validar_nome(
-            nome
+            dados.get("nome")
         )
 
-        admin_level = int(
-            admin_level or 0
+        validade = validar_validade(
+            dados.get(
+                "validade_senha"
+            )
         )
 
-        ativo = int(bool(ativo))
-
-        sistema = int(bool(sistema))
-
-        validar_nivel(
-            usuario,
-            admin_level
+        admin_level = validar_admin_level(
+            dados.get(
+                "admin_level"
+            )
         )
 
-        # ==========================================
-        # ROOT
-        # ==========================================
-
-        if not is_root(usuario):
-
-            sistema = 0
-
-        validade = tratar_validade(
-            admin_level,
-            validade
+        ativo = bool(
+            dados.get(
+                "ativo",
+                True
+            )
         )
+
+        sistema = bool(
+            dados.get(
+                "sistema",
+                False
+            )
+        )
+
+        if sistema and not is_root(
+            usuario_logado
+        ):
+
+            raise Exception(
+                "Somente ROOT pode criar perfil sistêmico."
+            )
+
+        if (
+
+            admin_level >= ROOT_LEVEL
+
+            and
+
+            not is_root(usuario_logado)
+        ):
+
+            raise Exception(
+                "Somente ROOT pode criar nível ROOT."
+            )
 
         conn = get_connection()
 
@@ -528,10 +498,14 @@ def criar_perfil(
         """, (
 
             nome,
+
             validade,
-            ativo,
+
+            int(ativo),
+
             admin_level,
-            sistema
+
+            int(sistema)
         ))
 
         perfil_id = cursor.fetchone()[0]
@@ -540,9 +514,9 @@ def criar_perfil(
 
         auditoria_segura(
 
-            usuario_id=usuario.get("id"),
+            usuario_id=usuario_logado.get("id"),
 
-            login=usuario.get("login"),
+            login=usuario_logado.get("login"),
 
             acao="CRIAR_PERFIL",
 
@@ -550,32 +524,25 @@ def criar_perfil(
 
             registro_id=perfil_id,
 
-            detalhes=(
-                f"nome={nome};"
-                f"level={admin_level};"
-                f"sistema={sistema}"
-            )
+            detalhes=nome
         )
 
-        return retorno(
-            True,
-            "Perfil criado.",
-            perfil_id
+        LOGGER.info(
+            f"Perfil criado: {nome}"
         )
 
-    except Exception as ex:
+        return perfil_id
+
+    except Exception:
 
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "PERFIL CREATE ERROR"
+        LOGGER.exception(
+            "CREATE PERFIL ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex)
-        )
+        raise
 
     finally:
 
@@ -589,96 +556,89 @@ def criar_perfil(
 
 
 # ==================================================
-# ATUALIZAR
+# UPDATE
 # ==================================================
 
 def atualizar_perfil(
-    usuario,
+
     perfil_id,
-    nome,
-    validade,
-    admin_level,
-    ativo=1,
-    sistema=0
+
+    dados,
+
+    usuario_logado
 ):
 
     conn = None
 
     try:
 
-        if not perfil_id:
-
-            raise Exception(
-                "Perfil inválido."
-            )
-
-        nome = validar_nome(
-            nome
-        )
-
-        admin_level = int(
-            admin_level or 0
-        )
-
-        ativo = int(bool(ativo))
-
-        sistema = int(bool(sistema))
-
         conn = get_connection()
 
         cursor = conn.cursor()
 
-        perfil = get_perfil(
+        perfil = obter_perfil(
             cursor,
             perfil_id
         )
 
-        validar_permissao_perfil(
-            usuario,
+        validar_perfil_alvo(
+            usuario_logado,
             perfil
         )
 
-        validar_nivel(
-            usuario,
-            admin_level
+        nome = validar_nome(
+            dados.get("nome")
         )
 
-        # ==========================================
-        # ROOT
-        # ==========================================
-
-        if perfil_id == 1:
-
-            raise Exception(
-                "ROOT não pode ser alterado."
+        validade = validar_validade(
+            dados.get(
+                "validade_senha"
             )
+        )
 
-        # ==========================================
-        # PERFIL SISTEMA
-        # ==========================================
+        admin_level = validar_admin_level(
+            dados.get(
+                "admin_level"
+            )
+        )
+
+        ativo = bool(
+            dados.get(
+                "ativo",
+                True
+            )
+        )
+
+        sistema = bool(
+            dados.get(
+                "sistema",
+                False
+            )
+        )
 
         if perfil["sistema"]:
 
+            sistema = True
+
+        if (
+
+            admin_level >= ROOT_LEVEL
+
+            and
+
+            not is_root(usuario_logado)
+        ):
+
             raise Exception(
-                "Perfil estrutural protegido."
+                "Somente ROOT pode alterar nível ROOT."
             )
 
-        # ==========================================
-        # ADMIN
-        # ==========================================
-
-        if not is_root(usuario):
-
-            sistema = 0
-
-        validade = tratar_validade(
-            admin_level,
-            validade
-        )
-
         validar_duplicidade(
+
             cursor,
+
             nome,
+
             perfil_id
         )
 
@@ -698,10 +658,15 @@ def atualizar_perfil(
         """, (
 
             nome,
+
             validade,
-            ativo,
+
+            int(ativo),
+
             admin_level,
-            sistema,
+
+            int(sistema),
+
             perfil_id
         ))
 
@@ -709,35 +674,35 @@ def atualizar_perfil(
 
         auditoria_segura(
 
-            usuario_id=usuario.get("id"),
+            usuario_id=usuario_logado.get("id"),
 
-            login=usuario.get("login"),
+            login=usuario_logado.get("login"),
 
-            acao="ATUALIZAR_PERFIL",
+            acao="ALTERAR_PERFIL",
 
             entidade="Perfis",
 
-            registro_id=perfil_id
+            registro_id=perfil_id,
+
+            detalhes=nome
         )
 
-        return retorno(
-            True,
-            "Perfil atualizado."
+        LOGGER.info(
+            f"Perfil atualizado: {nome}"
         )
 
-    except Exception as ex:
+        return True
+
+    except Exception:
 
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "PERFIL UPDATE ERROR"
+        LOGGER.exception(
+            "UPDATE PERFIL ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex)
-        )
+        raise
 
     finally:
 
@@ -751,56 +716,48 @@ def atualizar_perfil(
 
 
 # ==================================================
-# EXCLUIR
+# DELETE
 # ==================================================
 
 def excluir_perfil(
-    usuario,
-    perfil_id
+
+    perfil_id,
+
+    usuario_logado
 ):
 
     conn = None
 
     try:
 
-        if not perfil_id:
-
-            raise Exception(
-                "Perfil inválido."
-            )
-
-        if perfil_id == 1:
-
-            raise Exception(
-                "ROOT não pode ser removido."
-            )
-
         conn = get_connection()
 
         cursor = conn.cursor()
 
-        perfil = get_perfil(
+        perfil = obter_perfil(
             cursor,
             perfil_id
         )
 
-        validar_permissao_perfil(
-            usuario,
+        validar_perfil_alvo(
+            usuario_logado,
             perfil
         )
 
-        # ==========================================
-        # SISTEMA
-        # ==========================================
+        if perfil["admin_level"] >= ROOT_LEVEL:
+
+            raise Exception(
+                "Perfil ROOT não pode ser removido."
+            )
 
         if perfil["sistema"]:
 
             raise Exception(
-                "Perfil estrutural protegido."
+                "Perfil sistêmico não pode ser removido."
             )
 
         # ==========================================
-        # EM USO
+        # PERFIL EM USO
         # ==========================================
 
         if perfil_em_uso(
@@ -818,66 +775,88 @@ def excluir_perfil(
 
             """, (perfil_id,))
 
-            mensagem = (
-                "Perfil em uso. "
-                "Perfil desativado."
+            conn.commit()
+
+            auditoria_segura(
+
+                usuario_id=usuario_logado.get("id"),
+
+                login=usuario_logado.get("login"),
+
+                acao="DESATIVAR_PERFIL",
+
+                entidade="Perfis",
+
+                registro_id=perfil_id,
+
+                detalhes=perfil["nome"]
             )
 
-        else:
-
-            cursor.execute("""
-
-                DELETE FROM PerfilMenu
-
-                WHERE PerfilId = ?
-
-            """, (perfil_id,))
-
-            cursor.execute("""
-
-                DELETE FROM Perfis
-
-                WHERE Id = ?
-
-            """, (perfil_id,))
-
-            mensagem = (
-                "Perfil removido."
+            LOGGER.info(
+                f"Perfil desativado: "
+                f"{perfil['nome']}"
             )
+
+            return True
+
+        # ==========================================
+        # REMOVE PERMISSÕES
+        # ==========================================
+
+        cursor.execute("""
+
+            DELETE FROM PerfilMenu
+
+            WHERE PerfilId = ?
+
+        """, (perfil_id,))
+
+        # ==========================================
+        # REMOVE PERFIL
+        # ==========================================
+
+        cursor.execute("""
+
+            DELETE FROM Perfis
+
+            WHERE Id = ?
+
+        """, (perfil_id,))
 
         conn.commit()
 
         auditoria_segura(
 
-            usuario_id=usuario.get("id"),
+            usuario_id=usuario_logado.get("id"),
 
-            login=usuario.get("login"),
+            login=usuario_logado.get("login"),
 
             acao="EXCLUIR_PERFIL",
 
             entidade="Perfis",
 
-            registro_id=perfil_id
+            registro_id=perfil_id,
+
+            detalhes=perfil["nome"]
         )
 
-        return retorno(
-            True,
-            mensagem
+        LOGGER.info(
+            f"Perfil removido: "
+            f"{perfil['nome']}"
         )
 
-    except Exception as ex:
+        return True
+
+    except Exception:
 
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "PERFIL DELETE ERROR"
+        LOGGER.exception(
+            "DELETE PERFIL ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex)
-        )
+        raise
 
     finally:
 

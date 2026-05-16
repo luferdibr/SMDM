@@ -1,3 +1,4 @@
+# services/menu_admin_service.py
 
 import logging
 
@@ -9,492 +10,256 @@ from services.auditoria_service import (
     registrar_evento
 )
 
+from core.menu_constants import (
+    ADMIN_LEVEL_ROOT
+)
+
 
 # ==================================================
-# CONFIG
+# LOGGER
 # ==================================================
 
-ROOT_LEVEL = 100
-
-ADMIN_LEVEL = 50
-
-ROTAS_OBRIGATORIAS = {
-
-    "dashboard",
-
-    "alterar_senha"
-}
+LOGGER = logging.getLogger(
+    "MDM_MENU_ADMIN_SERVICE"
+)
 
 
 # ==================================================
 # HELPERS
 # ==================================================
 
-def retorno(
-    sucesso,
-    mensagem="",
+def ok(
+    mensagem="OK",
     dados=None
 ):
 
     return {
 
-        "sucesso": bool(sucesso),
+        "sucesso": True,
 
-        "mensagem": str(mensagem),
+        "mensagem": mensagem,
 
         "dados": dados
     }
 
 
-def permissao_vazia():
+def erro(mensagem):
 
     return {
 
-        "ver": 0,
+        "sucesso": False,
 
-        "editar": 0,
+        "mensagem": str(mensagem),
 
-        "excluir": 0
+        "dados": None
     }
 
 
-def auditoria_segura(**kwargs):
+def get_admin_level(usuario):
 
-    try:
+    if not usuario:
+        return 0
 
-        registrar_evento(**kwargs)
-
-    except Exception:
-
-        logging.exception(
-            "AUDITORIA ERROR"
+    return int(
+        usuario.get(
+            "admin_level",
+            0
         )
+    )
 
 
 def is_root(usuario):
 
-    return bool(
-        usuario
-        and
-        int(
-            usuario.get(
-                "admin_level",
-                0
-            )
-        ) >= ROOT_LEVEL
-    )
-
-
-def possui_nivel(
-    usuario,
-    nivel
-):
-
-    return bool(
-        usuario
-        and
-        int(
-            usuario.get(
-                "admin_level",
-                0
-            )
-        ) >= int(nivel)
+    return (
+        get_admin_level(usuario)
+        >=
+        ADMIN_LEVEL_ROOT
     )
 
 
 # ==================================================
-# PERFIL
+# NORMALIZA MENU
 # ==================================================
 
-def get_dados_perfil(
-    cursor,
-    perfil_id
-):
-
-    cursor.execute("""
-
-        SELECT
-            Id,
-            Nome,
-            Ativo,
-            Sistema,
-            AdminLevel
-
-        FROM Perfis
-
-        WHERE Id = ?
-
-    """, (perfil_id,))
-
-    row = cursor.fetchone()
-
-    if not row:
-        return None
+def normalizar_menu(row):
 
     return {
 
         "id": row[0],
 
-        "nome": row[1],
+        "nome": str(
+            row[1] or ""
+        ).strip(),
 
-        "ativo": bool(row[2]),
-
-        "sistema": bool(row[3]),
-
-        "admin_level": int(row[4] or 0)
-    }
-
-
-# ==================================================
-# MENU
-# ==================================================
-
-def get_dados_menu(
-    cursor,
-    menu_id
-):
-
-    cursor.execute("""
-
-        SELECT
-            Id,
-            Nome,
-            Rota,
-            MenuPaiId,
-            Sistema,
-            AdminLevel,
-            Ativo
-
-        FROM Menu
-
-        WHERE Id = ?
-
-    """, (menu_id,))
-
-    row = cursor.fetchone()
-
-    if not row:
-        return None
-
-    return {
-
-        "id": row[0],
-
-        "nome": row[1],
-
-        "rota": row[2],
+        "rota": (
+            str(row[2]).strip().lower()
+            if row[2]
+            else None
+        ),
 
         "pai": row[3],
 
-        "sistema": bool(row[4]),
+        "ordem": int(
+            row[4] or 0
+        ),
 
-        "admin_level": int(row[5] or 0),
+        "ativo": bool(row[5]),
 
-        "ativo": bool(row[6])
+        "tipo_menu": str(
+            row[6] or "M"
+        ).strip().upper(),
+
+        "sistema": bool(row[7]),
+
+        "admin_level": int(
+            row[8] or 0
+        )
     }
 
 
 # ==================================================
-# SEGURANÇA PERFIL
+# NORMALIZA PERMISSÃO
 # ==================================================
 
-def validar_perfil(
+def normalizar_permissao(row):
+
+    return {
+
+        "menu_id": row[0],
+
+        "ver": bool(row[1]),
+
+        "editar": bool(row[2]),
+
+        "excluir": bool(row[3])
+    }
+
+
+# ==================================================
+# GET PERMISSÕES
+# ==================================================
+
+def get_permissoes_usuario(
     usuario,
-    perfil
+    rota
 ):
 
-    if not usuario:
+    conn = None
 
-        raise Exception(
-            "Usuário inválido."
-        )
+    try:
 
-    if not perfil:
+        if not usuario:
 
-        raise Exception(
-            "Perfil inválido."
-        )
+            return {
 
-    if not perfil["ativo"]:
-
-        raise Exception(
-            "Perfil inativo."
-        )
-
-    usuario_level = int(
-        usuario.get(
-            "admin_level",
-            0
-        )
-    )
-
-    # ==============================================
-    # ROOT
-    # ==============================================
-
-    if usuario_level >= ROOT_LEVEL:
-        return
-
-    # ==============================================
-    # PERFIL SISTEMA
-    # ==============================================
-
-    if perfil["sistema"]:
-
-        raise Exception(
-            "Perfil estrutural protegido."
-        )
-
-    # ==============================================
-    # AUTO ELEVAÇÃO
-    # ==============================================
-
-    if perfil["admin_level"] >= usuario_level:
-
-        raise Exception(
-            "Sem permissão para alterar este perfil."
-        )
-
-
-# ==================================================
-# VALIDAR MENU
-# ==================================================
-
-def validar_menu(
-    usuario,
-    menu
-):
-
-    if not menu:
-        raise Exception(
-            "Menu inválido."
-        )
-
-    if not menu["ativo"]:
-
-        raise Exception(
-            "Menu inativo."
-        )
-
-    # ==============================================
-    # ROOT
-    # ==============================================
-
-    if is_root(usuario):
-        return
-
-    # ==============================================
-    # SISTEMA
-    # ==============================================
-
-    if menu["sistema"]:
-
-        raise Exception(
-            f"Menu estrutural protegido: {menu['nome']}"
-        )
-
-    # ==============================================
-    # NÍVEL
-    # ==============================================
-
-    if int(
-        usuario.get(
-            "admin_level",
-            0
-        )
-    ) < int(menu["admin_level"]):
-
-        raise Exception(
-            f"Menu protegido: {menu['nome']}"
-        )
-
-
-# ==================================================
-# PAIS
-# ==================================================
-
-def expandir_pais(
-    cursor,
-    permissoes
-):
-
-    resultado = []
-
-    lookup = {}
-
-    # ==============================================
-    # BASE
-    # ==============================================
-
-    for p in permissoes:
-
-        menu_id = p.get("menu_id")
-
-        if not menu_id:
-            continue
-
-        item = {
-
-            "menu_id": menu_id,
-
-            "ver": int(bool(
-                p.get("ver", 0)
-            )),
-
-            "editar": int(bool(
-                p.get("editar", 0)
-            )),
-
-            "excluir": int(bool(
-                p.get("excluir", 0)
-            ))
-        }
-
-        resultado.append(item)
-
-        lookup[menu_id] = item
-
-    # ==============================================
-    # SUBIR HIERARQUIA
-    # ==============================================
-
-    alterou = True
-
-    while alterou:
-
-        alterou = False
-
-        atuais = resultado.copy()
-
-        for item in atuais:
-
-            menu = get_dados_menu(
-                cursor,
-                item["menu_id"]
-            )
-
-            if not menu:
-                continue
-
-            pai = menu.get("pai")
-
-            if not pai:
-                continue
-
-            if pai in lookup:
-                continue
-
-            novo = {
-
-                "menu_id": pai,
-
-                "ver": 1,
-
-                "editar": 0,
-
-                "excluir": 0
+                "ver": False,
+                "editar": False,
+                "excluir": False
             }
 
-            resultado.append(novo)
+        # ==========================================
+        # ROOT
+        # ==========================================
 
-            lookup[pai] = novo
+        if is_root(usuario):
 
-            alterou = True
+            return {
 
-    return resultado
+                "ver": True,
+                "editar": True,
+                "excluir": True
+            }
 
-
-# ==================================================
-# MENUS OBRIGATÓRIOS
-# ==================================================
-
-def validar_menus_obrigatorios(
-    cursor,
-    permissoes
-):
-
-    cursor.execute("""
-
-        SELECT
-            Id,
-            Rota
-
-        FROM Menu
-
-        WHERE
-            Ativo = 1
-            AND Rota IS NOT NULL
-
-    """)
-
-    rows = cursor.fetchall()
-
-    rotas = {
-        r[0]: r[1]
-        for r in rows
-    }
-
-    liberadas = set()
-
-    for p in permissoes:
-
-        if not p.get("ver"):
-            continue
-
-        rota = rotas.get(
-            p["menu_id"]
+        perfil_id = usuario.get(
+            "perfil_id"
         )
 
-        if rota:
-            liberadas.add(rota)
+        if not perfil_id:
 
-    faltando = (
-        ROTAS_OBRIGATORIAS
-        - liberadas
-    )
+            return {
 
-    if faltando:
+                "ver": False,
+                "editar": False,
+                "excluir": False
+            }
 
-        raise Exception(
-            "Menus obrigatórios ausentes: "
-            + ", ".join(sorted(faltando))
+        rota = str(
+            rota or ""
+        ).strip().lower()
+
+        conn = get_connection()
+
+        cursor = conn.cursor()
+
+        cursor.execute("""
+
+            SELECT
+                pm.PodeVer,
+                pm.PodeEditar,
+                pm.PodeExcluir
+
+            FROM PerfilMenu pm
+
+            INNER JOIN Menu m
+                ON m.Id = pm.MenuId
+
+            WHERE
+                pm.PerfilId = ?
+                AND LOWER(m.Rota) = ?
+                AND m.Ativo = 1
+
+        """, (
+            perfil_id,
+            rota
+        ))
+
+        row = cursor.fetchone()
+
+        if not row:
+
+            return {
+
+                "ver": False,
+                "editar": False,
+                "excluir": False
+            }
+
+        return {
+
+            "ver": bool(row[0]),
+
+            "editar": bool(row[1]),
+
+            "excluir": bool(row[2])
+        }
+
+    except Exception:
+
+        LOGGER.exception(
+            "GET PERMISSION ERROR"
         )
+
+        return {
+
+            "ver": False,
+            "editar": False,
+            "excluir": False
+        }
+
+    finally:
+
+        try:
+            if conn:
+                conn.close()
+        except:
+            pass
 
 
 # ==================================================
-# SEGURANÇA MENUS
-# ==================================================
-
-def validar_menus_seguranca(
-    cursor,
-    usuario,
-    permissoes
-):
-
-    for p in permissoes:
-
-        menu_id = p.get("menu_id")
-
-        if not menu_id:
-            continue
-
-        menu = get_dados_menu(
-            cursor,
-            menu_id
-        )
-
-        validar_menu(
-            usuario,
-            menu
-        )
-
-
-# ==================================================
-# LISTAR MENUS
+# LISTAR MENUS + PERMISSÕES
 # ==================================================
 
 def listar_menus_com_permissao(
-    usuario,
     perfil_id
 ):
 
@@ -506,31 +271,16 @@ def listar_menus_com_permissao(
 
         cursor = conn.cursor()
 
-        perfil = get_dados_perfil(
-            cursor,
-            perfil_id
-        )
-
-        validar_perfil(
-            usuario,
-            perfil
-        )
-
-        usuario_level = int(
-            usuario.get(
-                "admin_level",
-                0
-            )
-        )
-
         cursor.execute("""
 
             SELECT
+
                 m.Id,
                 m.Nome,
                 m.Rota,
                 m.MenuPaiId,
                 m.Ordem,
+                m.Ativo,
                 m.TipoMenu,
                 m.Sistema,
                 m.AdminLevel,
@@ -553,140 +303,84 @@ def listar_menus_com_permissao(
                 m.Ordem,
                 m.Nome
 
-        """, (perfil_id,))
+        """, (
+            perfil_id,
+        ))
 
         rows = cursor.fetchall()
 
-        menus = []
+        retorno = []
 
-        for r in rows:
+        for row in rows:
 
-            sistema = bool(r[6])
+            menu = normalizar_menu(row)
 
-            admin_level = int(r[7] or 0)
+            menu["ver"] = bool(row[9])
 
-            # ======================================
-            # SEGURANÇA
-            # ======================================
+            menu["editar"] = bool(row[10])
 
-            if not is_root(usuario):
+            menu["excluir"] = bool(row[11])
 
-                if sistema:
-                    continue
+            retorno.append(menu)
 
-                if admin_level >= ROOT_LEVEL:
-                    continue
-
-                if admin_level > usuario_level:
-                    continue
-
-            menus.append({
-
-                "id": r[0],
-
-                "nome": r[1],
-
-                "rota": r[2],
-
-                "pai": r[3],
-
-                "ordem": r[4],
-
-                "tipo": r[5],
-
-                "sistema": sistema,
-
-                "admin_level": admin_level,
-
-                "ver": bool(r[8]),
-
-                "editar": bool(r[9]),
-
-                "excluir": bool(r[10])
-            })
-
-        return retorno(
-            True,
-            dados=menus
+        LOGGER.info(
+            (
+                f"Menus permissão: "
+                f"{len(retorno)}"
+            )
         )
 
-    except Exception as ex:
+        return retorno
 
-        logging.exception(
-            "MENU ADMIN LIST ERROR"
+    except Exception:
+
+        LOGGER.exception(
+            "LIST MENU PERMISSION ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex),
-            []
-        )
+        return []
 
     finally:
 
         try:
-
             if conn:
                 conn.close()
-
-        except Exception:
+        except:
             pass
 
 
 # ==================================================
-# SALVAR
+# SALVAR PERMISSÕES
 # ==================================================
 
 def salvar_permissoes(
-    usuario,
     perfil_id,
-    permissoes
+    permissoes,
+    usuario
 ):
 
     conn = None
 
     try:
 
+        if not perfil_id:
+
+            raise Exception(
+                "Perfil inválido."
+            )
+
+        if not permissoes:
+
+            raise Exception(
+                "Nenhuma permissão."
+            )
+
         conn = get_connection()
 
         cursor = conn.cursor()
 
-        perfil = get_dados_perfil(
-            cursor,
-            perfil_id
-        )
-
-        validar_perfil(
-            usuario,
-            perfil
-        )
-
         # ==========================================
-        # EXPANDIR
-        # ==========================================
-
-        permissoes = expandir_pais(
-            cursor,
-            permissoes
-        )
-
-        # ==========================================
-        # VALIDAR
-        # ==========================================
-
-        validar_menus_obrigatorios(
-            cursor,
-            permissoes
-        )
-
-        validar_menus_seguranca(
-            cursor,
-            usuario,
-            permissoes
-        )
-
-        # ==========================================
-        # LIMPAR
+        # REMOVE
         # ==========================================
 
         cursor.execute("""
@@ -695,63 +389,54 @@ def salvar_permissoes(
 
             WHERE PerfilId = ?
 
-        """, (perfil_id,))
+        """, (
+            perfil_id,
+        ))
 
         # ==========================================
-        # INSERIR
+        # INSERT
         # ==========================================
 
-        processados = set()
+        for item in permissoes:
 
-        for p in permissoes:
+            menu_id = item["menu_id"]
 
-            menu_id = p.get("menu_id")
-
-            if not menu_id:
-                continue
-
-            if menu_id in processados:
-                continue
-
-            processados.add(
-                menu_id
+            ver = int(
+                bool(
+                    item.get(
+                        "ver"
+                    )
+                )
             )
 
-            ver = int(bool(
-                p.get("ver", 0)
-            ))
+            editar = int(
+                bool(
+                    item.get(
+                        "editar"
+                    )
+                )
+            )
 
-            editar = int(bool(
-                p.get("editar", 0)
-            ))
-
-            excluir = int(bool(
-                p.get("excluir", 0)
-            ))
+            excluir = int(
+                bool(
+                    item.get(
+                        "excluir"
+                    )
+                )
+            )
 
             # ======================================
-            # AJUSTE
+            # IGNORA VAZIOS
             # ======================================
-
-            if editar or excluir:
-                ver = 1
 
             if not (
                 ver
-                or editar
-                or excluir
+                or
+                editar
+                or
+                excluir
             ):
                 continue
-
-            menu = get_dados_menu(
-                cursor,
-                menu_id
-            )
-
-            validar_menu(
-                usuario,
-                menu
-            )
 
             cursor.execute("""
 
@@ -779,24 +464,22 @@ def salvar_permissoes(
                 excluir
             ))
 
-        conn.commit()
+        registrar_evento(
 
-        auditoria_segura(
+            usuario,
 
-            usuario_id=usuario.get("id"),
+            "MENU_PERMISSION_SAVE",
 
-            login=usuario.get("login"),
-
-            acao="SALVAR_PERMISSOES",
-
-            entidade="PerfilMenu",
-
-            registro_id=perfil_id
+            (
+                f"Permissões perfil "
+                f"{perfil_id}"
+            )
         )
 
-        return retorno(
-            True,
-            "Permissões atualizadas."
+        conn.commit()
+
+        return ok(
+            "Permissões salvas."
         )
 
     except Exception as ex:
@@ -804,63 +487,48 @@ def salvar_permissoes(
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "MENU SAVE ERROR"
+        LOGGER.exception(
+            "SAVE MENU PERMISSION ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex)
-        )
+        return erro(ex)
 
     finally:
 
         try:
-
             if conn:
                 conn.close()
-
-        except Exception:
+        except:
             pass
 
 
 # ==================================================
-# COPIAR
+# COPIAR PERMISSÕES
 # ==================================================
 
 def copiar_permissoes(
-    usuario,
-    perfil_origem_id,
-    perfil_destino_id
+    perfil_origem,
+    perfil_destino,
+    usuario
 ):
 
     conn = None
 
     try:
 
+        if perfil_origem == perfil_destino:
+
+            raise Exception(
+                "Perfis iguais."
+            )
+
         conn = get_connection()
 
         cursor = conn.cursor()
 
-        perfil_origem = get_dados_perfil(
-            cursor,
-            perfil_origem_id
-        )
-
-        perfil_destino = get_dados_perfil(
-            cursor,
-            perfil_destino_id
-        )
-
-        validar_perfil(
-            usuario,
-            perfil_origem
-        )
-
-        validar_perfil(
-            usuario,
-            perfil_destino
-        )
+        # ==========================================
+        # REMOVE DESTINO
+        # ==========================================
 
         cursor.execute("""
 
@@ -868,104 +536,57 @@ def copiar_permissoes(
 
             WHERE PerfilId = ?
 
-        """, (perfil_destino_id,))
+        """, (
+            perfil_destino,
+        ))
 
         # ==========================================
-        # ROOT
+        # COPIA
         # ==========================================
 
-        if is_root(usuario):
+        cursor.execute("""
 
-            cursor.execute("""
+            INSERT INTO PerfilMenu
+            (
+                PerfilId,
+                MenuId,
+                PodeVer,
+                PodeEditar,
+                PodeExcluir
+            )
 
-                INSERT INTO PerfilMenu
-                (
-                    PerfilId,
-                    MenuId,
-                    PodeVer,
-                    PodeEditar,
-                    PodeExcluir
-                )
+            SELECT
+                ?,
+                MenuId,
+                PodeVer,
+                PodeEditar,
+                PodeExcluir
 
-                SELECT
-                    ?,
-                    MenuId,
-                    PodeVer,
-                    PodeEditar,
-                    PodeExcluir
+            FROM PerfilMenu
 
-                FROM PerfilMenu
+            WHERE PerfilId = ?
 
-                WHERE PerfilId = ?
+        """, (
 
-            """, (
-                perfil_destino_id,
-                perfil_origem_id
-            ))
+            perfil_destino,
+            perfil_origem
+        ))
 
-        # ==========================================
-        # ADMIN
-        # ==========================================
+        registrar_evento(
 
-        else:
+            usuario,
 
-            cursor.execute("""
+            "MENU_PERMISSION_COPY",
 
-                INSERT INTO PerfilMenu
-                (
-                    PerfilId,
-                    MenuId,
-                    PodeVer,
-                    PodeEditar,
-                    PodeExcluir
-                )
-
-                SELECT
-                    ?,
-                    pm.MenuId,
-                    pm.PodeVer,
-                    pm.PodeEditar,
-                    pm.PodeExcluir
-
-                FROM PerfilMenu pm
-
-                INNER JOIN Menu m
-                    ON m.Id = pm.MenuId
-
-                WHERE
-                    pm.PerfilId = ?
-                    AND m.Sistema = 0
-                    AND m.AdminLevel < ?
-
-            """, (
-
-                perfil_destino_id,
-
-                perfil_origem_id,
-
-                ROOT_LEVEL
-            ))
-
-        conn.commit()
-
-        auditoria_segura(
-
-            usuario_id=usuario.get("id"),
-
-            login=usuario.get("login"),
-
-            acao="COPIAR_PERMISSOES",
-
-            entidade="PerfilMenu",
-
-            detalhes=(
-                f"{perfil_origem_id} -> "
-                f"{perfil_destino_id}"
+            (
+                f"{perfil_origem} -> "
+                f"{perfil_destino}"
             )
         )
 
-        return retorno(
-            True,
+        conn.commit()
+
+        return ok(
             "Permissões copiadas."
         )
 
@@ -974,145 +595,16 @@ def copiar_permissoes(
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "MENU COPY ERROR"
+        LOGGER.exception(
+            "COPY MENU PERMISSION ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex)
-        )
+        return erro(ex)
 
     finally:
 
         try:
-
             if conn:
                 conn.close()
-
-        except Exception:
-            pass
-
-
-# ==================================================
-# PERMISSÕES USUÁRIO
-# ==================================================
-
-def get_permissoes_usuario(
-    usuario,
-    rota
-):
-
-    if not usuario:
-        return permissao_vazia()
-
-    # ==============================================
-    # ROOT
-    # ==============================================
-
-    if is_root(usuario):
-
-        return {
-
-            "ver": 1,
-
-            "editar": 1,
-
-            "excluir": 1
-        }
-
-    if not rota:
-        return permissao_vazia()
-
-    conn = None
-
-    try:
-
-        conn = get_connection()
-
-        cursor = conn.cursor()
-
-        cursor.execute("""
-
-            SELECT
-                pm.PodeVer,
-                pm.PodeEditar,
-                pm.PodeExcluir,
-
-                m.Sistema,
-                m.AdminLevel,
-                m.Ativo
-
-            FROM Menu m
-
-            INNER JOIN PerfilMenu pm
-                ON pm.MenuId = m.Id
-
-            WHERE
-                pm.PerfilId = ?
-                AND m.Rota = ?
-                AND m.Ativo = 1
-
-        """, (
-
-            usuario["perfil_id"],
-
-            rota
-        ))
-
-        row = cursor.fetchone()
-
-        if not row:
-            return permissao_vazia()
-
-        sistema = bool(row[3])
-
-        admin_level = int(row[4] or 0)
-
-        ativo = bool(row[5])
-
-        # ==========================================
-        # VALIDAÇÕES
-        # ==========================================
-
-        if not ativo:
-            return permissao_vazia()
-
-        if sistema:
-            return permissao_vazia()
-
-        if int(
-            usuario.get(
-                "admin_level",
-                0
-            )
-        ) < admin_level:
-
-            return permissao_vazia()
-
-        return {
-
-            "ver": bool(row[0]),
-
-            "editar": bool(row[1]),
-
-            "excluir": bool(row[2])
-        }
-
-    except Exception:
-
-        logging.exception(
-            "MENU PERMISSION ERROR"
-        )
-
-        return permissao_vazia()
-
-    finally:
-
-        try:
-
-            if conn:
-                conn.close()
-
-        except Exception:
+        except:
             pass

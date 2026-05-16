@@ -1,9 +1,12 @@
+# ui/menu_admin.py
 
 import logging
 
 import flet as ft
 
-from ui.dashboard import navegar
+from config.settings import (
+    APP_CONFIG
+)
 
 from services.user_service import (
     listar_perfis
@@ -20,17 +23,49 @@ from services.menu_admin_service import (
     get_permissoes_usuario
 )
 
+from services.menu_tree_service import (
 
-# ==================================================
-# CONFIG
-# ==================================================
+    build_menu_tree,
 
-ROOT_LEVEL = 100
+    flatten_tree
+)
+
+from core.menu_constants import (
+
+    MENU_UI_CONFIG,
+
+    ADMIN_LEVEL_ROOT,
+
+    TIPO_TITULO,
+
+    TIPO_MENU,
+
+    TIPO_SUBMENU,
+
+    get_label,
+
+    get_icone,
+
+    get_cor,
+
+    get_indent,
+
+    is_bold
+)
 
 
-# ==================================================
+# =========================================================
+# LOGGER
+# =========================================================
+
+LOGGER = logging.getLogger(
+    "MDM_MENU_ADMIN"
+)
+
+
+# =========================================================
 # HELPERS
-# ==================================================
+# =========================================================
 
 def get_usuario(page):
 
@@ -50,7 +85,7 @@ def get_usuario(page):
     return usuario
 
 
-def exibir_snackbar(
+def snackbar(
     page,
     mensagem,
     erro=False
@@ -71,57 +106,285 @@ def exibir_snackbar(
             else
 
             ft.Colors.GREEN_600
-        ),
-
-        open=True
+        )
     )
+
+    page.snack_bar.open = True
 
     page.update()
 
 
-# ==================================================
+def voltar_dashboard(page):
+
+    from ui.main_layout import (
+        carregar_conteudo
+    )
+
+    carregar_conteudo(
+
+        page,
+
+        page.content_area,
+
+        "dashboard",
+
+        page.usuario_logado
+    )
+
+
+def get_icon(tipo):
+
+    icon_map = {
+
+        "folder":
+            ft.Icons.FOLDER,
+
+        "menu":
+            ft.Icons.MENU,
+
+        "web":
+            ft.Icons.WEB,
+
+        "help":
+            ft.Icons.HELP
+    }
+
+    return icon_map.get(
+
+        get_icone(tipo),
+
+        ft.Icons.HELP
+    )
+
+
+# =========================================================
+# CHECKBOX
+# =========================================================
+
+def compact_checkbox(
+    value,
+    disabled=False
+):
+
+    return ft.Checkbox(
+
+        value=bool(value),
+
+        disabled=disabled,
+
+        visual_density=(
+            ft.VisualDensity.COMPACT
+        ),
+
+        scale=0.85
+    )
+
+
+# =========================================================
+# LINHA MENU
+# =========================================================
+
+def criar_linha_menu(
+
+    menu,
+
+    controles,
+
+    pode_editar
+):
+
+    tipo = menu.get(
+        "tipo_menu"
+    )
+
+    nivel = int(
+        menu.get(
+            "_nivel",
+            0
+        )
+    )
+
+    chk_ver = compact_checkbox(
+        menu.get("ver"),
+        not pode_editar
+    )
+
+    chk_editar = compact_checkbox(
+        menu.get("editar"),
+        not pode_editar
+    )
+
+    chk_excluir = compact_checkbox(
+        menu.get("excluir"),
+        not pode_editar
+    )
+
+    controles.append({
+
+        "menu_id": menu["id"],
+
+        "ver": chk_ver,
+
+        "editar": chk_editar,
+
+        "excluir": chk_excluir
+    })
+
+    return ft.Container(
+
+        height=MENU_UI_CONFIG[
+            "compact_height"
+        ],
+
+        padding=ft.padding.only(
+            left=6,
+            right=6
+        ),
+
+        border_radius=MENU_UI_CONFIG[
+            "border_radius"
+        ],
+
+        bgcolor=getattr(
+
+            ft.Colors,
+
+            get_cor(tipo),
+
+            ft.Colors.WHITE
+        ),
+
+        content=ft.Row([
+
+            # =================================================
+            # MENU
+            # =================================================
+
+            ft.Container(
+
+                expand=True,
+
+                padding=ft.padding.only(
+                    left=get_indent(nivel)
+                ),
+
+                content=ft.Row([
+
+                    ft.Icon(
+
+                        get_icon(tipo),
+
+                        size=MENU_UI_CONFIG[
+                            "icon_size"
+                        ],
+
+                        color=ft.Colors.BLUE_700
+                    ),
+
+                    ft.Column([
+
+                        ft.Text(
+
+                            menu["nome"],
+
+                            weight=(
+
+                                "bold"
+
+                                if is_bold(tipo)
+
+                                else None
+                            ),
+
+                            size=MENU_UI_CONFIG[
+                                "font_size"
+                            ]
+                        ),
+
+                        ft.Text(
+
+                            (
+                                f"ID {menu['id']} | "
+                                f"{get_label(tipo)}"
+                            ),
+
+                            size=MENU_UI_CONFIG[
+                                "sub_font_size"
+                            ],
+
+                            color=ft.Colors.GREY_700
+                        )
+
+                    ],
+
+                        spacing=0
+                    )
+
+                ],
+                    spacing=6
+                )
+            ),
+
+            # =================================================
+            # VER
+            # =================================================
+
+            ft.Container(
+                width=55,
+                alignment=ft.alignment.center,
+                content=chk_ver
+            ),
+
+            # =================================================
+            # EDITAR
+            # =================================================
+
+            ft.Container(
+                width=55,
+                alignment=ft.alignment.center,
+                content=chk_editar
+            ),
+
+            # =================================================
+            # EXCLUIR
+            # =================================================
+
+            ft.Container(
+                width=55,
+                alignment=ft.alignment.center,
+                content=chk_excluir
+            )
+
+        ],
+
+            spacing=4
+        )
+    )
+
+
+# =========================================================
 # VIEW
-# ==================================================
+# =========================================================
 
 def menu_admin_view(page):
 
     usuario = get_usuario(page)
 
-    # ==============================================
+    # =====================================================
     # SESSÃO
-    # ==============================================
+    # =====================================================
 
     if not usuario:
 
         return ft.Container(
 
-            content=ft.Column([
+            expand=True,
 
-                ft.Icon(
-                    ft.Icons.ERROR,
-                    size=72,
-                    color=ft.Colors.RED
-                ),
+            alignment=ft.alignment.center,
 
-                ft.Text(
-                    "Sessão inválida.",
-                    size=24,
-                    weight="bold",
-                    color=ft.Colors.RED
-                )
-
-            ],
-
-                spacing=20,
-
-                horizontal_alignment=(
-                    ft.CrossAxisAlignment.CENTER
-                )
-            ),
-
-            alignment=ft.Alignment(0, 0),
-
-            expand=True
+            content=ft.Text(
+                "Sessão inválida."
+            )
         )
 
     usuario_level = int(
@@ -132,12 +395,8 @@ def menu_admin_view(page):
     )
 
     is_root = (
-        usuario_level >= ROOT_LEVEL
+        usuario_level >= ADMIN_LEVEL_ROOT
     )
-
-    # ==============================================
-    # RBAC
-    # ==============================================
 
     permissoes_usuario = get_permissoes_usuario(
 
@@ -150,54 +409,36 @@ def menu_admin_view(page):
 
         return ft.Container(
 
-            content=ft.Column([
+            expand=True,
 
-                ft.Icon(
-                    ft.Icons.LOCK,
-                    size=72,
-                    color=ft.Colors.RED
-                ),
+            alignment=ft.alignment.center,
 
-                ft.Text(
-                    "Acesso negado.",
-                    size=24,
-                    weight="bold",
-                    color=ft.Colors.RED
-                )
-
-            ],
-
-                spacing=20,
-
-                horizontal_alignment=(
-                    ft.CrossAxisAlignment.CENTER
-                )
-            ),
-
-            alignment=ft.Alignment(0, 0),
-
-            expand=True
+            content=ft.Text(
+                "Acesso negado."
+            )
         )
 
     pode_editar = bool(
-        permissoes_usuario.get("editar")
+        permissoes_usuario.get(
+            "editar"
+        )
     )
-
-    carregando = False
 
     controles = []
 
-    menus_cache = []
-
-    # ==============================================
+    # =====================================================
     # COMPONENTES
-    # ==============================================
+    # =====================================================
 
     txt_filtro = ft.TextField(
 
-        label="Pesquisar Menu",
+        label="Pesquisar",
 
-        width=320,
+        dense=True,
+
+        height=40,
+
+        width=220,
 
         prefix_icon=ft.Icons.SEARCH
     )
@@ -206,620 +447,225 @@ def menu_admin_view(page):
 
         label="Perfil",
 
-        width=320
+        dense=True,
+
+        height=40,
+
+        width=220
     )
 
     ddl_copiar = ft.Dropdown(
 
-        label="Copiar permissões de",
+        label="Copiar de",
 
-        width=320
+        dense=True,
+
+        height=40,
+
+        width=220
+    )
+
+    progress = ft.ProgressRing(
+
+        visible=False,
+
+        width=18,
+
+        height=18
     )
 
     txt_status = ft.Text(
         "",
-        color=ft.Colors.RED
-    )
-
-    progress = ft.ProgressRing(
-        visible=False
+        color=ft.Colors.RED,
+        size=12
     )
 
     lista = ft.Column(
-        spacing=6
+
+        spacing=4,
+
+        scroll=ft.ScrollMode.AUTO,
+
+        expand=True
     )
 
-    # ==============================================
-    # BOTÕES
-    # ==============================================
-
-    btn_carregar = ft.ElevatedButton(
-
-        "Carregar",
-
-        icon=ft.Icons.SEARCH
-    )
-
-    btn_salvar = ft.ElevatedButton(
-
-        "Salvar",
-
-        icon=ft.Icons.SAVE,
-
-        disabled=not pode_editar
-    )
-
-    btn_copiar = ft.ElevatedButton(
-
-        "Copiar",
-
-        icon=ft.Icons.COPY,
-
-        disabled=not pode_editar
-    )
-
-    btn_voltar = ft.ElevatedButton(
-
-        "Voltar",
-
-        icon=ft.Icons.ARROW_BACK
-    )
-
-    # ==============================================
-    # LOCK UI
-    # ==============================================
-
-    def bloquear_ui(status):
-
-        progress.visible = status
-
-        btn_carregar.disabled = status
-
-        btn_salvar.disabled = (
-            status or not pode_editar
-        )
-
-        btn_copiar.disabled = (
-            status or not pode_editar
-        )
-
-        btn_voltar.disabled = status
-
-        ddl_perfil.disabled = status
-
-        ddl_copiar.disabled = status
-
-        txt_filtro.disabled = status
-
-        page.update()
-
-    # ==============================================
-    # STATUS
-    # ==============================================
-
-    def status(
-        texto,
-        erro=True
-    ):
-
-        txt_status.value = texto
-
-        txt_status.color = (
-
-            ft.Colors.RED
-
-            if erro
-
-            else ft.Colors.GREEN
-        )
-
-        page.update()
-
-    # ==============================================
+    # =====================================================
     # PERFIS
-    # ==============================================
+    # =====================================================
 
     def carregar_perfis():
 
-        resultado = listar_perfis(
-            usuario
-        )
+        try:
 
-        if not resultado["sucesso"]:
+            perfis = listar_perfis()
 
-            raise Exception(
-                resultado["mensagem"]
-            )
+            options = []
 
-        ddl_perfil.options.clear()
+            for perfil in perfis:
 
-        ddl_copiar.options.clear()
+                options.append(
 
-        for p in resultado["dados"]:
+                    ft.dropdown.Option(
 
-            perfil_level = int(
-                p.get(
-                    "admin_level",
-                    0
+                        key=str(
+                            perfil["id"]
+                        ),
+
+                        text=(
+                            f"{perfil['nome']} "
+                            f"[{perfil['admin_level']}]"
+                        )
+                    )
                 )
+
+            ddl_perfil.options = options
+
+            ddl_copiar.options = options.copy()
+
+            page.update()
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "LOAD_PERFIS_ERROR"
             )
 
-            perfil_sistema = bool(
-                p.get(
-                    "sistema",
-                    0
-                )
+            snackbar(
+                page,
+                str(ex),
+                erro=True
             )
 
-            # ======================================
-            # ROOT
-            # ======================================
+    # =====================================================
+    # MENUS
+    # =====================================================
 
-            if is_root:
-
-                pass
-
-            # ======================================
-            # ADMIN
-            # ======================================
-
-            else:
-
-                if perfil_sistema:
-                    continue
-
-                if perfil_level >= usuario_level:
-                    continue
-
-            texto = (
-                f"{p['nome']} "
-                f"(L{perfil_level})"
-            )
-
-            ddl_perfil.options.append(
-
-                ft.dropdown.Option(
-
-                    str(p["id"]),
-
-                    texto
-                )
-            )
-
-            ddl_copiar.options.append(
-
-                ft.dropdown.Option(
-
-                    str(p["id"]),
-
-                    texto
-                )
-            )
-
-    # ==============================================
-    # PREFIXO
-    # ==============================================
-
-    def obter_prefixo(menu):
-
-        if menu["sistema"]:
-            return "🔒"
-
-        if menu["tipo"] == "T":
-            return "📁"
-
-        if menu["tipo"] == "S":
-            return "📂"
-
-        return "📄"
-
-    # ==============================================
-    # NÍVEL
-    # ==============================================
-
-    def obter_nivel(menu_id):
-
-        lookup = {
-            m["id"]: m
-            for m in menus_cache
-        }
-
-        nivel = 0
-
-        atual = lookup.get(menu_id)
-
-        contador = 0
-
-        while (
-
-            atual
-            and
-            atual.get("pai")
-            and
-            contador < 30
-        ):
-
-            atual = lookup.get(
-                atual["pai"]
-            )
-
-            if not atual:
-                break
-
-            nivel += 1
-
-            contador += 1
-
-        return nivel
-
-    # ==============================================
-    # MENU PROTEGIDO
-    # ==============================================
-
-    def menu_protegido(menu):
-
-        if is_root:
-            return False
-
-        if menu["sistema"]:
-            return True
-
-        if int(
-            menu.get(
-                "admin_level",
-                0
-            )
-        ) >= ROOT_LEVEL:
-
-            return True
-
-        return False
-
-    # ==============================================
-    # VOLTAR
-    # ==============================================
-
-    def voltar_dashboard(e=None):
-
-        navegar(page, "dashboard")
-
-    btn_voltar.on_click = voltar_dashboard
-
-    # ==============================================
-    # CARREGAR
-    # ==============================================
-
-    def carregar(e=None):
-
-        nonlocal carregando
-
-        if carregando:
-            return
-
-        carregando = True
-
-        bloquear_ui(True)
+    def carregar_menus(e=None):
 
         try:
+
+            perfil_id = ddl_perfil.value
+
+            if not perfil_id:
+
+                lista.controls.clear()
+
+                page.update()
+
+                return
+
+            progress.visible = True
 
             lista.controls.clear()
 
             controles.clear()
 
-            if not ddl_perfil.value:
+            page.update()
 
-                raise Exception(
-                    "Selecione um perfil."
-                )
-
-            perfil_id = int(
-                ddl_perfil.value
+            menus = listar_menus_com_permissao(
+                int(perfil_id)
             )
 
-            resultado = listar_menus_com_permissao(
-
-                usuario,
-
-                perfil_id
+            tree = build_menu_tree(
+                menus
             )
 
-            if not resultado["sucesso"]:
-
-                raise Exception(
-                    resultado["mensagem"]
-                )
-
-            menus_cache.clear()
-
-            menus_cache.extend(
-                resultado["dados"]
-            )
-
-            menus = sorted(
-
-                menus_cache,
-
-                key=lambda x: (
-
-                    x["ordem"],
-
-                    x["nome"]
-                )
+            flat = flatten_tree(
+                tree
             )
 
             filtro = str(
-
                 txt_filtro.value or ""
+            ).strip().lower()
 
-            ).strip().upper()
-
-            for m in menus:
+            for menu in flat:
 
                 texto = (
-                    f"{m['nome']} "
-                    f"{m.get('rota') or ''}"
-                ).upper()
+                    f"{menu['nome']} "
+                    f"{menu.get('rota') or ''}"
+                ).lower()
 
                 if filtro:
 
                     if filtro not in texto:
                         continue
 
-                tipo = m["tipo"]
-
-                sistema = bool(
-                    m["sistema"]
-                )
-
-                protegido = (
-                    menu_protegido(m)
-                )
-
-                nivel = obter_nivel(
-                    m["id"]
-                )
-
-                chk_ver = ft.Checkbox(
-                    value=bool(m["ver"])
-                )
-
-                chk_editar = ft.Checkbox(
-                    value=bool(m["editar"])
-                )
-
-                chk_excluir = ft.Checkbox(
-                    value=bool(m["excluir"])
-                )
-
-                # ==================================
-                # TÍTULO
-                # ==================================
-
-                if tipo == "T":
-
-                    chk_editar.disabled = True
-
-                    chk_excluir.disabled = True
-
-                # ==================================
-                # SUBMENU
-                # ==================================
-
-                elif tipo == "S":
-
-                    chk_editar.disabled = True
-
-                    chk_excluir.disabled = True
-
-                # ==================================
-                # PROTEGIDO
-                # ==================================
-
-                if protegido:
-
-                    chk_ver.disabled = True
-
-                    chk_editar.disabled = True
-
-                    chk_excluir.disabled = True
-
-                controles.append({
-
-                    "menu_id": m["id"],
-
-                    "ver": chk_ver,
-
-                    "editar": chk_editar,
-
-                    "excluir": chk_excluir
-                })
-
                 lista.controls.append(
 
-                    ft.Container(
+                    criar_linha_menu(
 
-                        content=ft.Row([
+                        menu,
 
-                            ft.Container(
+                        controles,
 
-                                content=ft.Text(
-
-                                    (
-                                        f"{obter_prefixo(m)} "
-                                        f"{m['nome']}"
-                                    ),
-
-                                    weight=(
-
-                                        "bold"
-
-                                        if tipo in [
-                                            "T",
-                                            "S"
-                                        ]
-
-                                        else None
-                                    ),
-
-                                    size=(
-
-                                        16
-
-                                        if tipo == "T"
-
-                                        else 14
-                                    )
-                                ),
-
-                                width=380,
-
-                                padding=ft.padding.only(
-                                    left=nivel * 24
-                                )
-                            ),
-
-                            ft.Text(
-
-                                str(
-                                    m.get(
-                                        "admin_level",
-                                        0
-                                    )
-                                ),
-
-                                width=70
-                            ),
-
-                            chk_ver,
-
-                            chk_editar,
-
-                            chk_excluir
-
-                        ],
-
-                            wrap=True
-                        ),
-
-                        padding=10,
-
-                        border=ft.border.all(
-
-                            1,
-
-                            ft.Colors.GREY_300
-                        ),
-
-                        border_radius=8,
-
-                        bgcolor=(
-
-                            ft.Colors.RED_50
-
-                            if sistema
-
-                            else (
-
-                                ft.Colors.BLUE_50
-
-                                if tipo == "T"
-
-                                else (
-
-                                    ft.Colors.GREY_100
-
-                                    if tipo == "S"
-
-                                    else None
-                                )
-                            )
-                        )
+                        pode_editar
                     )
                 )
+
+            progress.visible = False
 
             page.update()
 
         except Exception as ex:
 
-            logging.exception(
-                "LOAD PERMISSIONS ERROR"
+            LOGGER.exception(
+                "LOAD_MENU_ERROR"
             )
 
-            status(str(ex))
+            progress.visible = False
 
-        finally:
+            txt_status.value = str(ex)
 
-            carregando = False
+            page.update()
 
-            bloquear_ui(False)
-
-    btn_carregar.on_click = carregar
-
-    txt_filtro.on_change = (
-        lambda e: carregar()
-    )
-
-    # ==============================================
+    # =====================================================
     # SALVAR
-    # ==============================================
+    # =====================================================
 
-    def salvar(e=None):
-
-        nonlocal carregando
-
-        if carregando:
-            return
-
-        carregando = True
-
-        bloquear_ui(True)
+    def salvar(e):
 
         try:
 
-            if not ddl_perfil.value:
+            perfil_id = ddl_perfil.value
 
-                raise Exception(
-                    "Selecione um perfil."
+            if not perfil_id:
+
+                snackbar(
+                    page,
+                    "Selecione perfil.",
+                    erro=True
                 )
 
-            perfil_id = int(
-                ddl_perfil.value
-            )
+                return
 
             permissoes = []
 
-            for c in controles:
+            for item in controles:
 
                 permissoes.append({
 
-                    "menu_id": c["menu_id"],
+                    "menu_id": item["menu_id"],
 
-                    "ver": int(
-                        bool(
-                            c["ver"].value
-                        )
+                    "ver": bool(
+                        item["ver"].value
                     ),
 
-                    "editar": int(
-                        bool(
-                            c["editar"].value
-                        )
+                    "editar": bool(
+                        item["editar"].value
                     ),
 
-                    "excluir": int(
-                        bool(
-                            c["excluir"].value
-                        )
+                    "excluir": bool(
+                        item["excluir"].value
                     )
                 })
 
             resultado = salvar_permissoes(
 
-                usuario,
+                int(perfil_id),
 
-                perfil_id,
+                permissoes,
 
-                permissoes
+                usuario
             )
 
             if not resultado["sucesso"]:
@@ -828,81 +674,52 @@ def menu_admin_view(page):
                     resultado["mensagem"]
                 )
 
-            exibir_snackbar(
-
+            snackbar(
                 page,
-
                 resultado["mensagem"]
             )
 
         except Exception as ex:
 
-            logging.exception(
-                "SAVE PERMISSIONS ERROR"
+            LOGGER.exception(
+                "SAVE_PERMISSION_ERROR"
             )
 
-            exibir_snackbar(
-
+            snackbar(
                 page,
-
                 str(ex),
-
                 erro=True
             )
 
-        finally:
-
-            carregando = False
-
-            bloquear_ui(False)
-
-    btn_salvar.on_click = salvar
-
-    # ==============================================
+    # =====================================================
     # COPIAR
-    # ==============================================
+    # =====================================================
 
-    def copiar(e=None):
-
-        nonlocal carregando
-
-        if carregando:
-            return
-
-        carregando = True
-
-        bloquear_ui(True)
+    def copiar(e):
 
         try:
 
-            if (
+            origem = ddl_copiar.value
 
-                not ddl_perfil.value
+            destino = ddl_perfil.value
 
-                or
+            if not origem or not destino:
 
-                not ddl_copiar.value
-            ):
-
-                raise Exception(
-                    "Selecione origem e destino."
+                snackbar(
+                    page,
+                    "Selecione perfis.",
+                    erro=True
                 )
 
-            destino = int(
-                ddl_perfil.value
-            )
-
-            origem = int(
-                ddl_copiar.value
-            )
+                return
 
             resultado = copiar_permissoes(
 
-                usuario,
+                int(origem),
 
-                origem,
+                int(destino),
 
-                destino
+                usuario
             )
 
             if not resultado["sucesso"]:
@@ -911,176 +728,236 @@ def menu_admin_view(page):
                     resultado["mensagem"]
                 )
 
-            carregar()
+            carregar_menus()
 
-            exibir_snackbar(
-
+            snackbar(
                 page,
-
                 resultado["mensagem"]
             )
 
         except Exception as ex:
 
-            logging.exception(
-                "COPY PERMISSIONS ERROR"
+            LOGGER.exception(
+                "COPY_PERMISSION_ERROR"
             )
 
-            exibir_snackbar(
-
+            snackbar(
                 page,
-
                 str(ex),
-
                 erro=True
             )
 
-        finally:
+    txt_filtro.on_change = carregar_menus
 
-            carregando = False
+    ddl_perfil.on_change = carregar_menus
 
-            bloquear_ui(False)
+    # =====================================================
+    # BOTÕES
+    # =====================================================
 
-    btn_copiar.on_click = copiar
+    btn_salvar = ft.ElevatedButton(
 
-    # ==============================================
-    # INIT
-    # ==============================================
+        "Salvar",
 
-    try:
+        height=38,
 
-        carregar_perfis()
+        icon=ft.Icons.SAVE,
 
-    except Exception as ex:
+        disabled=not pode_editar,
 
-        logging.exception(
-            "LOAD PROFILES ERROR"
-        )
+        on_click=salvar
+    )
 
-        status(str(ex))
+    btn_copiar = ft.OutlinedButton(
 
-    # ==============================================
-    # LAYOUT
-    # ==============================================
+        "Copiar",
 
-    return ft.Column([
+        height=38,
 
-        ft.Row([
+        icon=ft.Icons.CONTENT_COPY,
 
-            ft.Text(
+        disabled=(
 
-                "Administração de Permissões",
-
-                size=28,
-
-                weight="bold"
-            ),
-
-            progress
-
-        ],
-
-            alignment=(
-                ft.MainAxisAlignment.SPACE_BETWEEN
-            )
+            not pode_editar
+            and
+            not is_root
         ),
 
-        ft.Divider(),
+        on_click=copiar
+    )
 
-        ft.Row([
+    btn_voltar = ft.TextButton(
 
-            ddl_perfil,
+        "Voltar",
 
-            ddl_copiar,
+        icon=ft.Icons.ARROW_BACK,
 
-            txt_filtro
+        on_click=lambda e:
+            voltar_dashboard(page)
+    )
 
-        ],
+    carregar_perfis()
 
-            wrap=True
-        ),
+    # =====================================================
+    # VIEW
+    # =====================================================
 
-        txt_status,
-
-        ft.Row([
-
-            btn_carregar,
-
-            btn_salvar,
-
-            btn_copiar,
-
-            btn_voltar
-
-        ],
-
-            wrap=True
-        ),
-
-        ft.Divider(),
-
-        ft.Container(
-
-            content=ft.Row([
-
-                ft.Text(
-
-                    "Menu",
-
-                    width=380,
-
-                    weight="bold"
-                ),
-
-                ft.Text(
-
-                    "Level",
-
-                    width=70,
-
-                    weight="bold"
-                ),
-
-                ft.Text(
-
-                    "Ver",
-
-                    width=60,
-
-                    weight="bold"
-                ),
-
-                ft.Text(
-
-                    "Editar",
-
-                    width=70,
-
-                    weight="bold"
-                ),
-
-                ft.Text(
-
-                    "Excluir",
-
-                    width=70,
-
-                    weight="bold"
-                )
-
-            ],
-
-                wrap=True
-            ),
-
-            padding=10
-        ),
-
-        lista
-
-    ],
+    return ft.Container(
 
         expand=True,
 
-        scroll=ft.ScrollMode.AUTO
+        padding=12,
+
+        content=ft.Column([
+
+            # =================================================
+            # HEADER
+            # =================================================
+
+            ft.Row([
+
+                ft.Column([
+
+                    ft.Text(
+
+                        "Permissões de Menu",
+
+                        size=24,
+
+                        weight="bold"
+                    ),
+
+                    ft.Text(
+
+                        APP_CONFIG["name"],
+
+                        size=11,
+
+                        color=ft.Colors.GREY_700
+                    )
+
+                ],
+
+                    spacing=0,
+                    expand=True
+                ),
+
+                btn_voltar
+            ]),
+
+            # =================================================
+            # FILTROS
+            # =================================================
+
+            ft.Row([
+
+                ddl_perfil,
+
+                ddl_copiar,
+
+                txt_filtro,
+
+                progress
+
+            ],
+
+                wrap=True,
+
+                spacing=8
+            ),
+
+            # =================================================
+            # AÇÕES
+            # =================================================
+
+            ft.Row([
+
+                btn_salvar,
+
+                btn_copiar
+
+            ],
+                spacing=8
+            ),
+
+            txt_status,
+
+            # =================================================
+            # HEADER GRID
+            # =================================================
+
+            ft.Container(
+
+                padding=8,
+
+                border_radius=8,
+
+                bgcolor=ft.Colors.BLUE_100,
+
+                content=ft.Row([
+
+                    ft.Container(
+                        expand=True,
+                        content=ft.Text(
+                            "Menu",
+                            weight="bold"
+                        )
+                    ),
+
+                    ft.Container(
+                        width=55,
+                        alignment=ft.alignment.center,
+                        content=ft.Text(
+                            "Ver",
+                            weight="bold",
+                            size=12
+                        )
+                    ),
+
+                    ft.Container(
+                        width=55,
+                        alignment=ft.alignment.center,
+                        content=ft.Text(
+                            "Editar",
+                            weight="bold",
+                            size=12
+                        )
+                    ),
+
+                    ft.Container(
+                        width=55,
+                        alignment=ft.alignment.center,
+                        content=ft.Text(
+                            "Excluir",
+                            weight="bold",
+                            size=12
+                        )
+                    )
+
+                ])
+            ),
+
+            # =================================================
+            # LISTA
+            # =================================================
+
+            ft.Container(
+
+                expand=True,
+
+                padding=6,
+
+                bgcolor=ft.Colors.GREY_100,
+
+                border_radius=10,
+
+                content=lista
+            )
+
+        ],
+
+            spacing=10,
+
+            expand=True
+        )
     )

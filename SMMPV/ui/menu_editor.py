@@ -1,9 +1,8 @@
+# ui/menu_editor.py
 
 import logging
 
 import flet as ft
-
-from ui.dashboard import navegar
 
 from services.menu_editor_service import (
 
@@ -14,54 +13,49 @@ from services.menu_editor_service import (
     excluir_menu
 )
 
-from services.menu_admin_service import (
-    get_permissoes_usuario
+from services.menu_tree_service import (
+
+    build_menu_tree,
+
+    flatten_tree
+)
+
+from core.menu_constants import (
+
+    MENU_UI_CONFIG,
+
+    tipos_menu,
+
+    get_label,
+
+    get_icone,
+
+    get_cor,
+
+    get_indent,
+
+    permite_rota,
+
+    permite_pai,
+
+    is_bold
 )
 
 
-# ==================================================
-# CONFIG
-# ==================================================
+# =========================================================
+# LOGGER
+# =========================================================
 
-ROOT_LEVEL = 100
-
-ROTAS_PROTEGIDAS = {
-
-    "dashboard",
-
-    "alterar_senha",
-
-    "usuarios",
-
-    "perfis",
-
-    "menu_config"
-}
+LOGGER = logging.getLogger(
+    "MDM_MENU_EDITOR"
+)
 
 
-# ==================================================
+# =========================================================
 # HELPERS
-# ==================================================
+# =========================================================
 
-def get_usuario(page):
-
-    usuario = getattr(
-        page,
-        "usuario_logado",
-        None
-    )
-
-    if (
-        not usuario
-        or
-        not isinstance(usuario, dict)
-    ):
-        return None
-
-    return usuario
-
-
-def exibir_snackbar(
+def snackbar(
     page,
     mensagem,
     erro=False
@@ -81,799 +75,624 @@ def exibir_snackbar(
 
             else
 
-            ft.Colors.GREEN_600
-        ),
-
-        open=True
+            ft.Colors.GREEN_700
+        )
     )
+
+    page.snack_bar.open = True
 
     page.update()
 
 
-# ==================================================
-# VIEW
-# ==================================================
+def voltar_dashboard(page):
 
-def menu_editor_view(page):
+    from ui.main_layout import (
+        carregar_conteudo
+    )
 
-    usuario = get_usuario(page)
+    carregar_conteudo(
 
-    # ==============================================
-    # SESSÃO
-    # ==============================================
+        page,
 
-    if not usuario:
+        page.content_area,
 
-        return ft.Container(
+        "dashboard",
 
-            content=ft.Column([
+        page.usuario_logado
+    )
 
-                ft.Icon(
-                    ft.Icons.ERROR,
-                    size=72,
-                    color=ft.Colors.RED
-                ),
 
-                ft.Text(
-                    "Sessão inválida.",
-                    size=24,
-                    weight="bold",
-                    color=ft.Colors.RED
+def get_icon(tipo):
+
+    icon_map = {
+
+        "folder":
+            ft.Icons.FOLDER,
+
+        "menu":
+            ft.Icons.MENU,
+
+        "web":
+            ft.Icons.WEB,
+
+        "help":
+            ft.Icons.HELP
+    }
+
+    return icon_map.get(
+
+        get_icone(tipo),
+
+        ft.Icons.HELP
+    )
+
+
+# =========================================================
+# FORM RESET
+# =========================================================
+
+def limpar_form(
+
+    txt_id,
+    txt_nome,
+    txt_rota,
+    txt_ordem,
+    chk_ativo,
+    chk_sistema,
+    ddl_tipo,
+    ddl_pai
+):
+
+    txt_id.value = ""
+
+    txt_nome.value = ""
+
+    txt_rota.value = ""
+
+    txt_ordem.value = "10"
+
+    chk_ativo.value = True
+
+    chk_sistema.value = False
+
+    ddl_tipo.value = None
+
+    ddl_pai.value = None
+
+
+# =========================================================
+# BUILD OPTIONS
+# =========================================================
+
+def build_tipo_options():
+
+    options = []
+
+    for tipo in tipos_menu():
+
+        options.append(
+
+            ft.dropdown.Option(
+
+                key=tipo,
+
+                text=(
+                    f"{tipo} - "
+                    f"{get_label(tipo)}"
                 )
-
-            ],
-
-                spacing=20,
-
-                horizontal_alignment=(
-                    ft.CrossAxisAlignment.CENTER
-                )
-            ),
-
-            alignment=ft.Alignment(0, 0),
-
-            expand=True
+            )
         )
 
-    usuario_level = int(
-        usuario.get(
-            "admin_level",
+    return options
+
+
+# =========================================================
+# BUILD MENU OPTIONS
+# =========================================================
+
+def build_menu_options(menus):
+
+    options = [
+
+        ft.dropdown.Option(
+            key="",
+            text="Sem pai"
+        )
+    ]
+
+    for menu in menus:
+
+        nivel = int(
+            menu.get(
+                "_nivel",
+                0
+            )
+        )
+
+        prefixo = (
+            "· " * nivel
+        )
+
+        options.append(
+
+            ft.dropdown.Option(
+
+                key=str(
+                    menu["id"]
+                ),
+
+                text=(
+                    f"{prefixo}"
+                    f"{menu['nome']}"
+                )
+            )
+        )
+
+    return options
+
+
+# =========================================================
+# ROW MENU
+# =========================================================
+
+def build_menu_row(
+
+    menu,
+
+    on_editar,
+
+    on_excluir
+):
+
+    tipo = menu.get(
+        "tipo"
+    )
+
+    nivel = int(
+        menu.get(
+            "_nivel",
             0
         )
     )
 
-    is_root = (
-        usuario_level >= ROOT_LEVEL
-    )
+    return ft.Container(
 
-    # ==============================================
-    # PERMISSÕES
-    # ==============================================
+        height=MENU_UI_CONFIG[
+            "compact_height"
+        ],
 
-    permissoes = get_permissoes_usuario(
+        bgcolor=getattr(
 
-        usuario,
+            ft.Colors,
 
-        "editor_menu"
-    )
+            get_cor(tipo),
 
-    if not permissoes.get("ver"):
+            ft.Colors.WHITE
+        ),
 
-        return ft.Container(
+        border_radius=MENU_UI_CONFIG[
+            "border_radius"
+        ],
 
-            content=ft.Column([
+        padding=ft.padding.only(
 
-                ft.Icon(
-                    ft.Icons.LOCK,
-                    size=72,
-                    color=ft.Colors.RED
-                ),
+            left=get_indent(nivel),
 
-                ft.Text(
-                    "Acesso negado.",
-                    size=24,
-                    weight="bold",
-                    color=ft.Colors.RED
-                )
+            right=6
+        ),
 
-            ],
+        content=ft.Row([
 
-                spacing=20,
+            # =================================================
+            # MENU
+            # =================================================
 
-                horizontal_alignment=(
-                    ft.CrossAxisAlignment.CENTER
+            ft.Container(
+
+                expand=True,
+
+                content=ft.Row([
+
+                    ft.Icon(
+
+                        get_icon(tipo),
+
+                        size=MENU_UI_CONFIG[
+                            "icon_size"
+                        ]
+                    ),
+
+                    ft.Column([
+
+                        ft.Text(
+
+                            menu["nome"],
+
+                            size=MENU_UI_CONFIG[
+                                "font_size"
+                            ],
+
+                            weight=(
+
+                                "bold"
+
+                                if is_bold(tipo)
+
+                                else None
+                            )
+                        ),
+
+                        ft.Text(
+
+                            (
+                                f"ID {menu['id']} | "
+                                f"{get_label(tipo)} | "
+                                f"{menu.get('rota') or '-'}"
+                            ),
+
+                            size=MENU_UI_CONFIG[
+                                "sub_font_size"
+                            ],
+
+                            color=ft.Colors.GREY_700
+                        )
+
+                    ],
+
+                        spacing=0
+                    )
+
+                ],
+
+                    spacing=6
                 )
             ),
 
-            alignment=ft.Alignment(0, 0),
+            # =================================================
+            # BOTÕES
+            # =================================================
 
-            expand=True
+            ft.IconButton(
+
+                icon=ft.Icons.EDIT,
+
+                tooltip="Editar",
+
+                icon_size=18,
+
+                on_click=lambda e:
+                    on_editar(menu)
+            ),
+
+            ft.IconButton(
+
+                icon=ft.Icons.DELETE,
+
+                tooltip="Excluir",
+
+                icon_color=ft.Colors.RED_400,
+
+                icon_size=18,
+
+                on_click=lambda e:
+                    on_excluir(menu)
+            )
+
+        ],
+
+            spacing=4
         )
-
-    pode_editar = bool(
-        permissoes.get("editar")
     )
 
-    pode_excluir = bool(
-        permissoes.get("excluir")
+
+# =========================================================
+# VIEW
+# =========================================================
+
+def menu_editor_view(page):
+
+    usuario = getattr(
+        page,
+        "usuario_logado",
+        None
     )
 
-    carregando = False
+    menus_flat = []
 
-    menu_editando = {
-        "id": None
-    }
-
-    menus_cache = []
-
-    # ==============================================
+    # =====================================================
     # COMPONENTES
-    # ==============================================
+    # =====================================================
 
-    txt_filtro = ft.TextField(
-
-        label="Pesquisar",
-
-        width=320,
-
-        prefix_icon=ft.Icons.SEARCH
+    txt_id = ft.TextField(
+        visible=False
     )
 
     txt_nome = ft.TextField(
 
         label="Nome",
 
-        width=260,
+        dense=True,
 
-        disabled=not pode_editar
+        expand=True
     )
 
     txt_rota = ft.TextField(
 
         label="Rota",
 
-        width=260,
+        dense=True,
 
-        disabled=not pode_editar
+        expand=True
     )
 
     txt_ordem = ft.TextField(
 
         label="Ordem",
 
-        width=120,
+        dense=True,
 
-        value="10",
+        width=100,
 
-        disabled=not pode_editar
-    )
-
-    txt_admin_level = ft.TextField(
-
-        label="Admin Level",
-
-        width=150,
-
-        value="10",
-
-        visible=is_root,
-
-        disabled=not pode_editar
-    )
-
-    ddl_tipo = ft.Dropdown(
-
-        label="Tipo",
-
-        width=180,
-
-        value="M",
-
-        disabled=not pode_editar,
-
-        options=[
-
-            ft.dropdown.Option(
-                "T",
-                "Título"
-            ),
-
-            ft.dropdown.Option(
-                "S",
-                "Submenu"
-            ),
-
-            ft.dropdown.Option(
-                "M",
-                "Menu"
-            )
-        ]
-    )
-
-    ddl_pai = ft.Dropdown(
-
-        label="Menu Pai",
-
-        width=320,
-
-        disabled=not pode_editar
+        value="10"
     )
 
     chk_ativo = ft.Checkbox(
 
         label="Ativo",
 
-        value=True,
-
-        disabled=not pode_editar
+        value=True
     )
 
     chk_sistema = ft.Checkbox(
 
-        label="Estrutural",
+        label="Sistema",
 
-        value=False,
+        value=False
+    )
 
-        visible=is_root,
+    ddl_tipo = ft.Dropdown(
 
-        disabled=(
-            not pode_editar
-            or
-            not is_root
-        )
+        label="Tipo",
+
+        dense=True,
+
+        width=180,
+
+        options=build_tipo_options()
+    )
+
+    ddl_pai = ft.Dropdown(
+
+        label="Menu Pai",
+
+        dense=True,
+
+        expand=True
+    )
+
+    lista = ft.Column(
+
+        expand=True,
+
+        scroll=ft.ScrollMode.AUTO,
+
+        spacing=4
     )
 
     txt_status = ft.Text(
         "",
+        size=12,
         color=ft.Colors.RED
     )
 
-    progress = ft.ProgressRing(
-        visible=False
-    )
-
-    lista = ft.Column(
-        spacing=6
-    )
-
-    # ==============================================
-    # BOTÕES
-    # ==============================================
-
-    btn_salvar = ft.ElevatedButton(
-
-        "Salvar",
-
-        icon=ft.Icons.SAVE,
-
-        disabled=not pode_editar
-    )
-
-    btn_limpar = ft.OutlinedButton(
-
-        "Limpar",
-
-        icon=ft.Icons.CLEAR,
-
-        disabled=not pode_editar
-    )
-
-    btn_voltar = ft.ElevatedButton(
-
-        "Voltar",
-
-        icon=ft.Icons.ARROW_BACK
-    )
-
-    # ==============================================
-    # LOCK UI
-    # ==============================================
-
-    def bloquear_ui(status):
-
-        progress.visible = status
-
-        btn_salvar.disabled = (
-            status or not pode_editar
-        )
-
-        btn_limpar.disabled = (
-            status or not pode_editar
-        )
-
-        btn_voltar.disabled = status
-
-        txt_nome.disabled = (
-            status or not pode_editar
-        )
-
-        txt_rota.disabled = (
-            status or not pode_editar
-        )
-
-        txt_ordem.disabled = (
-            status or not pode_editar
-        )
-
-        ddl_tipo.disabled = (
-            status or not pode_editar
-        )
-
-        ddl_pai.disabled = (
-            status or not pode_editar
-        )
-
-        chk_ativo.disabled = (
-            status or not pode_editar
-        )
-
-        txt_admin_level.disabled = (
-
-            status
-
-            or
-
-            not pode_editar
-
-            or
-
-            not is_root
-        )
-
-        chk_sistema.disabled = (
-
-            status
-
-            or
-
-            not pode_editar
-
-            or
-
-            not is_root
-        )
-
-        page.update()
-
-    # ==============================================
-    # STATUS
-    # ==============================================
-
-    def status(
-        texto,
-        erro=True
-    ):
-
-        txt_status.value = texto
-
-        txt_status.color = (
-
-            ft.Colors.RED
-
-            if erro
-
-            else ft.Colors.GREEN
-        )
-
-        page.update()
-
-    # ==============================================
-    # PREFIXO
-    # ==============================================
-
-    def prefixo(menu):
-
-        if menu["sistema"]:
-            return "🔒"
-
-        if menu["tipo"] == "T":
-            return "📁"
-
-        if menu["tipo"] == "S":
-            return "📂"
-
-        return "📄"
-
-    # ==============================================
-    # NÍVEL
-    # ==============================================
-
-    def obter_nivel(menu, lookup):
-
-        nivel = 0
-
-        atual = menu
-
-        contador = 0
-
-        while (
-
-            atual.get("pai")
-            and
-            contador < 30
-        ):
-
-            atual = lookup.get(
-                atual["pai"]
-            )
-
-            if not atual:
-                break
-
-            nivel += 1
-
-            contador += 1
-
-        return nivel
-
-    # ==============================================
-    # VISUALIZAÇÃO
-    # ==============================================
-
-    def pode_visualizar(menu):
-
-        if is_root:
-            return True
-
-        if menu["sistema"]:
-            return False
-
-        if int(
-            menu.get(
-                "admin_level",
-                0
-            )
-        ) >= ROOT_LEVEL:
-
-            return False
-
-        return True
-
-    # ==============================================
-    # ROTA VISÍVEL
-    # ==============================================
-
-    def atualizar_campos_tipo(e=None):
-
-        tipo = ddl_tipo.value
-
-        txt_rota.visible = (
-            tipo == "M"
-        )
-
-        ddl_pai.visible = (
-            tipo != "T"
-        )
-
-        page.update()
-
-    ddl_tipo.on_change = (
-        atualizar_campos_tipo
-    )
-
-    # ==============================================
-    # COMBO PAIS
-    # ==============================================
-
-    def carregar_combo_pais():
-
-        ddl_pai.options.clear()
-
-        ddl_pai.options.append(
-
-            ft.dropdown.Option(
-                "",
-                "(Raiz)"
-            )
-        )
-
-        lookup = {
-            m["id"]: m
-            for m in menus_cache
-        }
-
-        for m in menus_cache:
-
-            if not pode_visualizar(m):
-                continue
-
-            if m["tipo"] == "M":
-                continue
-
-            if (
-                menu_editando["id"]
-                and
-                m["id"]
-                == menu_editando["id"]
-            ):
-                continue
-
-            nivel = obter_nivel(
-                m,
-                lookup
-            )
-
-            espaco = "   " * nivel
-
-            ddl_pai.options.append(
-
-                ft.dropdown.Option(
-
-                    str(m["id"]),
-
-                    (
-                        f"{espaco}"
-                        f"{prefixo(m)} "
-                        f"{m['nome']}"
-                    )
-                )
-            )
-
-    # ==============================================
-    # LIMPAR
-    # ==============================================
-
-    def limpar(e=None):
-
-        menu_editando["id"] = None
-
-        txt_nome.value = ""
-
-        txt_rota.value = ""
-
-        txt_ordem.value = "10"
-
-        txt_admin_level.value = "10"
-
-        ddl_tipo.value = "M"
-
-        ddl_pai.value = ""
-
-        chk_ativo.value = True
-
-        chk_sistema.value = False
-
-        txt_status.value = ""
-
-        atualizar_campos_tipo()
-
-        carregar_combo_pais()
-
-        page.update()
-
-    btn_limpar.on_click = limpar
-
-    # ==============================================
-    # VOLTAR
-    # ==============================================
-
-    def voltar_dashboard(e=None):
-
-        navegar(page, "dashboard")
-
-    btn_voltar.on_click = voltar_dashboard
-
-    # ==============================================
-    # VALIDAR
-    # ==============================================
-
-    def validar():
-
-        nome = str(
-
-            txt_nome.value or ""
-
-        ).strip()
-
-        if not nome:
-
-            raise Exception(
-                "Informe nome."
-            )
-
-        tipo = ddl_tipo.value
-
-        rota = str(
-
-            txt_rota.value or ""
-
-        ).strip().lower()
-
-        if tipo == "M":
-
-            if not rota:
-
-                raise Exception(
-                    "Informe rota."
-                )
-
-        if rota in ROTAS_PROTEGIDAS:
-
-            raise Exception(
-                "Rota protegida."
-            )
+    # =====================================================
+    # REFRESH
+    # =====================================================
+
+    def refresh(e=None):
 
         try:
 
-            ordem = int(
-                txt_ordem.value
-            )
+            resultado = listar_menus()
 
-            if ordem < 0:
-
-                raise Exception()
-
-        except:
-
-            raise Exception(
-                "Ordem inválida."
-            )
-
-        if is_root:
-
-            try:
-
-                level = int(
-                    txt_admin_level.value
-                )
-
-                if level < 0:
-                    raise Exception()
-
-            except:
+            if not resultado["sucesso"]:
 
                 raise Exception(
-                    "AdminLevel inválido."
+                    resultado["mensagem"]
                 )
 
-    # ==============================================
-    # EDITAR
-    # ==============================================
+            menus = resultado["dados"]
 
-    def editar(menu):
-
-        if not pode_editar:
-
-            exibir_snackbar(
-
-                page,
-
-                "Sem permissão.",
-
-                erro=True
+            tree = build_menu_tree(
+                menus
             )
 
-            return
+            flat = flatten_tree(
+                tree
+            )
 
-        menu_editando["id"] = menu["id"]
+            menus_flat.clear()
 
-        txt_nome.value = menu["nome"]
+            menus_flat.extend(flat)
+
+            lista.controls.clear()
+
+            ddl_pai.options = (
+                build_menu_options(
+                    flat
+                )
+            )
+
+            for menu in flat:
+
+                lista.controls.append(
+
+                    build_menu_row(
+
+                        menu,
+
+                        editar_menu,
+
+                        excluir_menu_click
+                    )
+                )
+
+            page.update()
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "REFRESH_ERROR"
+            )
+
+            txt_status.value = str(ex)
+
+            page.update()
+
+    # =====================================================
+    # TIPO CHANGE
+    # =====================================================
+
+    def tipo_change(e):
+
+        tipo = ddl_tipo.value
+
+        txt_rota.disabled = (
+            not permite_rota(tipo)
+        )
+
+        ddl_pai.disabled = (
+            not permite_pai(tipo)
+        )
+
+        if not permite_rota(tipo):
+
+            txt_rota.value = ""
+
+        if not permite_pai(tipo):
+
+            ddl_pai.value = ""
+
+        page.update()
+
+    ddl_tipo.on_change = tipo_change
+
+    # =====================================================
+    # EDITAR
+    # =====================================================
+
+    def editar_menu(menu):
+
+        txt_id.value = str(
+            menu["id"]
+        )
+
+        txt_nome.value = (
+            menu["nome"]
+        )
 
         txt_rota.value = (
-            menu["rota"] or ""
+            menu.get("rota")
+            or ""
         )
 
         txt_ordem.value = str(
-            menu["ordem"]
-        )
-
-        txt_admin_level.value = str(
             menu.get(
-                "admin_level",
+                "ordem",
                 10
             )
         )
 
-        ddl_tipo.value = menu["tipo"]
+        chk_ativo.value = bool(
+            menu.get(
+                "ativo",
+                True
+            )
+        )
+
+        chk_sistema.value = bool(
+            menu.get(
+                "sistema",
+                False
+            )
+        )
+
+        ddl_tipo.value = (
+            menu.get("tipo")
+        )
+
+        pai = (
+
+            menu.get("pai")
+
+            or
+
+            menu.get(
+                "menu_pai"
+            )
+        )
 
         ddl_pai.value = (
 
-            str(menu["pai"])
+            str(pai)
 
-            if menu["pai"]
+            if pai
 
             else ""
         )
 
-        chk_ativo.value = bool(
-            menu["ativo"]
-        )
-
-        chk_sistema.value = bool(
-            menu["sistema"]
-        )
-
-        atualizar_campos_tipo()
-
-        carregar_combo_pais()
+        tipo_change(None)
 
         page.update()
 
-    # ==============================================
+    # =====================================================
     # SALVAR
-    # ==============================================
+    # =====================================================
 
-    def salvar(e=None):
-
-        nonlocal carregando
-
-        if carregando:
-            return
-
-        carregando = True
-
-        bloquear_ui(True)
+    def salvar_click(e):
 
         try:
 
-            validar()
-
-            tipo = ddl_tipo.value
-
-            rota = None
-
-            if tipo == "M":
-
-                rota = str(
-
-                    txt_rota.value or ""
-
-                ).strip().lower()
-
-            pai = None
-
-            if (
-                tipo != "T"
-                and
-                ddl_pai.value
-            ):
-
-                pai = int(
-                    ddl_pai.value
-                )
-
             dados = {
 
-                "id": menu_editando["id"],
+                "id": (
 
-                "nome": str(
+                    int(txt_id.value)
 
-                    txt_nome.value or ""
+                    if txt_id.value
 
-                ).strip(),
+                    else None
+                ),
 
-                "rota": rota,
+                "nome":
+                    txt_nome.value,
 
-                "pai": pai,
+                "rota":
+                    txt_rota.value,
+
+                "pai": (
+
+                    int(ddl_pai.value)
+
+                    if ddl_pai.value
+
+                    else None
+                ),
 
                 "ordem": int(
                     txt_ordem.value
                 ),
 
-                "ativo": int(
-                    bool(
-                        chk_ativo.value
-                    )
-                ),
+                "ativo":
+                    chk_ativo.value,
 
-                "tipo": tipo,
+                "sistema":
+                    chk_sistema.value,
 
-                "sistema": int(
-                    bool(
-                        chk_sistema.value
-                    )
-                ),
+                "tipo":
+                    ddl_tipo.value,
 
-                "admin_level": (
-
-                    int(
-                        txt_admin_level.value
-                    )
-
-                    if is_root
-
-                    else 10
-                )
+                "admin_level": 10
             }
 
             resultado = salvar_menu(
@@ -889,471 +708,344 @@ def menu_editor_view(page):
                     resultado["mensagem"]
                 )
 
-            limpar()
-
-            carregar()
-
-            exibir_snackbar(
+            snackbar(
 
                 page,
 
                 resultado["mensagem"]
             )
 
-        except Exception as ex:
+            limpar_form(
 
-            logging.exception(
-                "MENU SAVE ERROR"
+                txt_id,
+                txt_nome,
+                txt_rota,
+                txt_ordem,
+                chk_ativo,
+                chk_sistema,
+                ddl_tipo,
+                ddl_pai
             )
 
-            status(str(ex))
-
-        finally:
-
-            carregando = False
-
-            bloquear_ui(False)
-
-    btn_salvar.on_click = salvar
-
-    # ==============================================
-    # REMOVER
-    # ==============================================
-
-    def remover(menu):
-
-        try:
-
-            resultado = excluir_menu(
-
-                usuario,
-
-                menu["id"]
-            )
-
-            if not resultado["sucesso"]:
-
-                raise Exception(
-                    resultado["mensagem"]
-                )
-
-            carregar()
-
-            exibir_snackbar(
-
-                page,
-
-                resultado["mensagem"]
-            )
+            refresh()
 
         except Exception as ex:
 
-            logging.exception(
-                "MENU DELETE ERROR"
+            LOGGER.exception(
+                "SAVE_ERROR"
             )
 
-            exibir_snackbar(
-
+            snackbar(
                 page,
-
                 str(ex),
-
                 erro=True
             )
 
-    # ==============================================
-    # GRID
-    # ==============================================
+    # =====================================================
+    # EXCLUIR
+    # =====================================================
 
-    def render_menu(menu):
+    def excluir_menu_click(menu):
 
-        sistema = bool(
-            menu["sistema"]
-        )
+        def confirmar(e):
 
-        rota_protegida = (
-            menu.get("rota")
-            in ROTAS_PROTEGIDAS
-        )
+            try:
 
-        cor = None
+                resultado = excluir_menu(
 
-        if sistema:
+                    usuario,
 
-            cor = ft.Colors.RED_50
-
-        elif menu["tipo"] == "T":
-
-            cor = ft.Colors.BLUE_50
-
-        elif menu["tipo"] == "S":
-
-            cor = ft.Colors.GREY_100
-
-        controles = []
-
-        # ==========================================
-        # EDITAR
-        # ==========================================
-
-        if pode_editar:
-
-            controles.append(
-
-                ft.IconButton(
-
-                    icon=ft.Icons.EDIT,
-
-                    tooltip="Editar",
-
-                    disabled=(
-
-                        sistema
-
-                        and
-
-                        not is_root
-                    ),
-
-                    on_click=lambda e,
-                    x=menu: editar(x)
+                    menu["id"]
                 )
-            )
 
-        # ==========================================
-        # DELETE
-        # ==========================================
+                dlg.open = False
 
-        if pode_excluir:
+                page.update()
 
-            controles.append(
+                if not resultado["sucesso"]:
 
-                ft.IconButton(
-
-                    icon=ft.Icons.DELETE,
-
-                    tooltip="Desativar",
-
-                    disabled=(
-
-                        sistema
-
-                        or
-
-                        rota_protegida
-                    ),
-
-                    on_click=lambda e,
-                    x=menu: remover(x)
-                )
-            )
-
-        return ft.Container(
-
-            content=ft.Row([
-
-                ft.Container(
-
-                    content=ft.Text(
-
-                        (
-                            f"{prefixo(menu)} "
-                            f"{menu['nome']}"
-                        ),
-
-                        weight=(
-
-                            "bold"
-
-                            if menu["tipo"] in [
-                                "T",
-                                "S"
-                            ]
-
-                            else None
-                        )
-                    ),
-
-                    width=360,
-
-                    padding=ft.padding.only(
-
-                        left=(
-                            obter_nivel(
-
-                                menu,
-
-                                {
-                                    m["id"]: m
-                                    for m in menus_cache
-                                }
-                            ) * 24
-                        )
+                    raise Exception(
+                        resultado["mensagem"]
                     )
-                ),
 
-                ft.Text(
+                snackbar(
 
-                    menu["rota"] or "",
+                    page,
 
-                    width=180
-                ),
+                    resultado["mensagem"]
+                )
 
-                ft.Text(
+                refresh()
 
-                    menu["tipo"],
+            except Exception as ex:
 
-                    width=60
-                ),
+                LOGGER.exception(
+                    "DELETE_ERROR"
+                )
 
-                ft.Text(
+                snackbar(
+                    page,
+                    str(ex),
+                    erro=True
+                )
 
-                    str(
-                        menu.get(
-                            "admin_level",
-                            0
-                        )
-                    ),
+        dlg = ft.AlertDialog(
 
-                    width=80
-                ),
+            modal=True,
 
-                ft.Text(
-
-                    str(
-                        menu["ordem"]
-                    ),
-
-                    width=60
-                ),
-
-                ft.Text(
-
-                    "Ativo"
-
-                    if menu["ativo"]
-
-                    else "Inativo",
-
-                    width=90
-                ),
-
-                *controles
-
-            ],
-
-                wrap=True
+            title=ft.Text(
+                "Confirmar"
             ),
 
-            padding=10,
+            content=ft.Text(
 
-            border=ft.border.all(
-
-                1,
-
-                ft.Colors.GREY_300
+                (
+                    f"Excluir "
+                    f"{menu['nome']}?"
+                )
             ),
 
-            border_radius=8,
+            actions=[
 
-            bgcolor=cor
+                ft.TextButton(
+
+                    "Cancelar",
+
+                    on_click=lambda e:
+                        fechar_dialog()
+                ),
+
+                ft.ElevatedButton(
+
+                    "Excluir",
+
+                    color=ft.Colors.WHITE,
+
+                    bgcolor=ft.Colors.RED,
+
+                    on_click=confirmar
+                )
+            ]
         )
 
-    # ==============================================
-    # CARREGAR
-    # ==============================================
+        def fechar_dialog():
 
-    def carregar():
+            dlg.open = False
 
-        lista.controls.clear()
+            page.update()
 
-        resultado = listar_menus()
+        page.dialog = dlg
 
-        if not resultado["sucesso"]:
-
-            status(
-                resultado["mensagem"]
-            )
-
-            return
-
-        menus_cache.clear()
-
-        menus_cache.extend(
-            resultado["dados"]
-        )
-
-        carregar_combo_pais()
-
-        filtro = str(
-
-            txt_filtro.value or ""
-
-        ).strip().upper()
-
-        for menu in menus_cache:
-
-            if not pode_visualizar(menu):
-                continue
-
-            texto = (
-                f"{menu['nome']} "
-                f"{menu.get('rota') or ''}"
-            ).upper()
-
-            if filtro:
-
-                if filtro not in texto:
-                    continue
-
-            lista.controls.append(
-                render_menu(menu)
-            )
+        dlg.open = True
 
         page.update()
 
-    txt_filtro.on_change = (
-        lambda e: carregar()
+    # =====================================================
+    # NOVO
+    # =====================================================
+
+    def novo_click(e):
+
+        limpar_form(
+
+            txt_id,
+            txt_nome,
+            txt_rota,
+            txt_ordem,
+            chk_ativo,
+            chk_sistema,
+            ddl_tipo,
+            ddl_pai
+        )
+
+        page.update()
+
+    # =====================================================
+    # BOTÕES
+    # =====================================================
+
+    btn_salvar = ft.ElevatedButton(
+
+        "Salvar",
+
+        icon=ft.Icons.SAVE,
+
+        height=38,
+
+        on_click=salvar_click
     )
 
-    # ==============================================
-    # INIT
-    # ==============================================
+    btn_novo = ft.OutlinedButton(
 
-    atualizar_campos_tipo()
+        "Novo",
 
-    carregar()
+        icon=ft.Icons.ADD,
 
-    # ==============================================
-    # LAYOUT
-    # ==============================================
+        height=38,
 
-    return ft.Column([
+        on_click=novo_click
+    )
 
-        ft.Row([
+    btn_refresh = ft.IconButton(
 
-            ft.Text(
+        icon=ft.Icons.REFRESH,
 
-                "Editor de Menu",
+        tooltip="Atualizar",
 
-                size=28,
+        on_click=refresh
+    )
 
-                weight="bold"
-            ),
+    btn_voltar = ft.TextButton(
 
-            progress
+        "Voltar",
 
-        ],
+        icon=ft.Icons.ARROW_BACK,
 
-            alignment=(
-                ft.MainAxisAlignment.SPACE_BETWEEN
-            )
-        ),
+        on_click=lambda e:
+            voltar_dashboard(page)
+    )
 
-        ft.Divider(),
+    refresh()
 
-        txt_filtro,
+    # =====================================================
+    # VIEW
+    # =====================================================
 
-        ft.Row([
-
-            txt_nome,
-
-            txt_rota
-
-        ],
-
-            wrap=True
-        ),
-
-        ft.Row([
-
-            txt_ordem,
-
-            ddl_tipo,
-
-            ddl_pai,
-
-            chk_ativo,
-
-            chk_sistema,
-
-            txt_admin_level
-
-        ],
-
-            wrap=True
-        ),
-
-        txt_status,
-
-        ft.Row([
-
-            btn_salvar,
-
-            btn_limpar,
-
-            btn_voltar
-
-        ],
-
-            wrap=True
-        ),
-
-        ft.Divider(),
-
-        ft.Container(
-
-            content=ft.Row([
-
-                ft.Text(
-                    "Menu",
-                    width=360,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Rota",
-                    width=180,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Tipo",
-                    width=60,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Level",
-                    width=80,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Ordem",
-                    width=60,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Status",
-                    width=90,
-                    weight="bold"
-                )
-
-            ],
-
-                wrap=True
-            ),
-
-            padding=10
-        ),
-
-        lista
-
-    ],
+    return ft.Container(
 
         expand=True,
 
-        scroll=ft.ScrollMode.AUTO
+        padding=12,
+
+        content=ft.Column([
+
+            # =================================================
+            # HEADER
+            # =================================================
+
+            ft.Row([
+
+                ft.Column([
+
+                    ft.Text(
+
+                        "Editor de Menus",
+
+                        size=24,
+
+                        weight="bold"
+                    ),
+
+                    ft.Text(
+
+                        "Estrutura dinâmica",
+
+                        size=11,
+
+                        color=ft.Colors.GREY_700
+                    )
+
+                ],
+
+                    spacing=0,
+
+                    expand=True
+                ),
+
+                btn_refresh,
+
+                btn_voltar
+            ]),
+
+            # =================================================
+            # FORM
+            # =================================================
+
+            ft.Container(
+
+                padding=10,
+
+                border_radius=10,
+
+                bgcolor=ft.Colors.GREY_100,
+
+                content=ft.Column([
+
+                    ft.Row([
+
+                        txt_nome,
+
+                        ddl_tipo
+
+                    ],
+
+                        spacing=8
+                    ),
+
+                    ft.Row([
+
+                        txt_rota,
+
+                        ddl_pai,
+
+                        txt_ordem
+
+                    ],
+
+                        spacing=8
+                    ),
+
+                    ft.Row([
+
+                        chk_ativo,
+
+                        chk_sistema
+
+                    ],
+
+                        spacing=10
+                    ),
+
+                    ft.Row([
+
+                        btn_salvar,
+
+                        btn_novo
+
+                    ],
+
+                        spacing=8
+                    )
+
+                ],
+
+                    spacing=8
+                )
+            ),
+
+            txt_status,
+
+            # =================================================
+            # LISTA
+            # =================================================
+
+            ft.Container(
+
+                expand=True,
+
+                padding=6,
+
+                bgcolor=ft.Colors.GREY_100,
+
+                border_radius=10,
+
+                content=lista
+            )
+
+        ],
+
+            spacing=10,
+
+            expand=True
+        )
     )

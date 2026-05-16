@@ -3,7 +3,9 @@ import logging
 
 import flet as ft
 
-from ui.dashboard import navegar
+from config.settings import (
+    APP_CONFIG
+)
 
 from services.perfil_service import (
 
@@ -17,10 +19,11 @@ from services.perfil_service import (
 )
 
 from services.menu_admin_service import (
-
-    copiar_permissoes,
-
     get_permissoes_usuario
+)
+
+from ui.dashboard import (
+    navegar
 )
 
 
@@ -29,6 +32,15 @@ from services.menu_admin_service import (
 # ==================================================
 
 ROOT_LEVEL = 100
+
+
+# ==================================================
+# LOGGER
+# ==================================================
+
+LOGGER = logging.getLogger(
+    "MDM_PERFIS_UI"
+)
 
 
 # ==================================================
@@ -53,9 +65,12 @@ def get_usuario(page):
     return usuario
 
 
-def exibir_snackbar(
+def snackbar(
+
     page,
+
     mensagem,
+
     erro=False
 ):
 
@@ -74,19 +89,43 @@ def exibir_snackbar(
             else
 
             ft.Colors.GREEN_600
-        ),
-
-        open=True
+        )
     )
 
+    page.snack_bar.open = True
+
     page.update()
+
+
+def get_cor_admin(level):
+
+    if level >= ROOT_LEVEL:
+
+        return ft.Colors.RED
+
+    if level >= 50:
+
+        return ft.Colors.ORANGE
+
+    return ft.Colors.BLUE
+
+
+def get_nome_admin(level):
+
+    if level >= ROOT_LEVEL:
+        return "ROOT"
+
+    if level >= 50:
+        return "ADMIN"
+
+    return "OPERACIONAL"
 
 
 # ==================================================
 # VIEW
 # ==================================================
 
-def perfis_view(page):
+def perfil_view(page):
 
     usuario = get_usuario(page)
 
@@ -98,33 +137,30 @@ def perfis_view(page):
 
         return ft.Container(
 
+            expand=True,
+
+            alignment=ft.alignment.center,
+
             content=ft.Column([
 
                 ft.Icon(
                     ft.Icons.ERROR,
-                    size=72,
+                    size=70,
                     color=ft.Colors.RED
                 ),
 
                 ft.Text(
                     "Sessão inválida.",
                     size=24,
-                    weight="bold",
-                    color=ft.Colors.RED
+                    weight="bold"
                 )
 
             ],
-
                 spacing=20,
-
                 horizontal_alignment=(
                     ft.CrossAxisAlignment.CENTER
                 )
-            ),
-
-            alignment=ft.Alignment(0, 0),
-
-            expand=True
+            )
         )
 
     usuario_level = int(
@@ -139,7 +175,7 @@ def perfis_view(page):
     )
 
     # ==============================================
-    # PERMISSÕES
+    # RBAC
     # ==============================================
 
     permissoes = get_permissoes_usuario(
@@ -153,6 +189,10 @@ def perfis_view(page):
 
         return ft.Container(
 
+            expand=True,
+
+            alignment=ft.alignment.center,
+
             content=ft.Column([
 
                 ft.Icon(
@@ -164,43 +204,63 @@ def perfis_view(page):
                 ft.Text(
                     "Acesso negado.",
                     size=24,
-                    weight="bold",
-                    color=ft.Colors.RED
+                    weight="bold"
                 )
 
             ],
-
                 spacing=20,
-
                 horizontal_alignment=(
                     ft.CrossAxisAlignment.CENTER
                 )
-            ),
-
-            alignment=ft.Alignment(0, 0),
-
-            expand=True
+            )
         )
 
     pode_editar = bool(
         permissoes.get("editar")
     )
 
-    pode_excluir = bool(
-        permissoes.get("excluir")
-    )
-
-    carregando = False
-
-    perfil_editando = {
-        "id": None
-    }
-
-    perfis_cache = []
-
     # ==============================================
     # COMPONENTES
     # ==============================================
+
+    txt_id = ft.TextField(
+        visible=False
+    )
+
+    txt_nome = ft.TextField(
+
+        label="Nome Perfil",
+
+        width=320
+    )
+
+    txt_validade = ft.TextField(
+
+        label="Validade Senha (dias)",
+
+        width=220
+    )
+
+    txt_admin_level = ft.TextField(
+
+        label="Admin Level",
+
+        width=180
+    )
+
+    chk_ativo = ft.Checkbox(
+
+        label="Ativo",
+
+        value=True
+    )
+
+    chk_sistema = ft.Checkbox(
+
+        label="Perfil Sistêmico",
+
+        value=False
+    )
 
     txt_filtro = ft.TextField(
 
@@ -211,689 +271,58 @@ def perfis_view(page):
         prefix_icon=ft.Icons.SEARCH
     )
 
-    txt_nome = ft.TextField(
+    tabela = ft.Column(
 
-        label="Nome Perfil",
+        spacing=8,
 
-        width=260,
+        scroll=ft.ScrollMode.AUTO,
 
-        disabled=not pode_editar
-    )
-
-    txt_validade = ft.TextField(
-
-        label="Validade Senha (dias)",
-
-        width=180,
-
-        disabled=not pode_editar
-    )
-
-    txt_admin = ft.TextField(
-
-        label="Admin Level",
-
-        width=160,
-
-        value="10",
-
-        disabled=not pode_editar
-    )
-
-    chk_ativo = ft.Checkbox(
-
-        label="Ativo",
-
-        value=True,
-
-        disabled=not pode_editar
-    )
-
-    chk_sistema = ft.Checkbox(
-
-        label="Estrutural",
-
-        value=False,
-
-        disabled=(
-            not pode_editar
-            or
-            not is_root
-        )
-    )
-
-    ddl_copiar = ft.Dropdown(
-
-        label="Copiar permissões de",
-
-        width=320,
-
-        disabled=not pode_editar
-    )
-
-    txt_status = ft.Text(
-        "",
-        color=ft.Colors.RED
-    )
-
-    progress = ft.ProgressRing(
-        visible=False
-    )
-
-    lista = ft.Column(
-        spacing=6
+        expand=True
     )
 
     # ==============================================
-    # BOTÕES
+    # HELPERS
     # ==============================================
 
-    btn_salvar = ft.ElevatedButton(
+    def limpar():
 
-        "Salvar",
-
-        icon=ft.Icons.SAVE,
-
-        disabled=not pode_editar
-    )
-
-    btn_limpar = ft.OutlinedButton(
-
-        "Limpar",
-
-        icon=ft.Icons.CLEAR,
-
-        disabled=not pode_editar
-    )
-
-    btn_voltar = ft.ElevatedButton(
-
-        "Voltar",
-
-        icon=ft.Icons.ARROW_BACK
-    )
-
-    # ==============================================
-    # UI LOCK
-    # ==============================================
-
-    def bloquear_ui(status):
-
-        progress.visible = status
-
-        btn_salvar.disabled = (
-            status or not pode_editar
-        )
-
-        btn_limpar.disabled = (
-            status or not pode_editar
-        )
-
-        btn_voltar.disabled = status
-
-        txt_nome.disabled = (
-            status or not pode_editar
-        )
-
-        txt_validade.disabled = (
-            status or not pode_editar
-        )
-
-        txt_admin.disabled = (
-            status or not pode_editar
-        )
-
-        chk_ativo.disabled = (
-            status or not pode_editar
-        )
-
-        chk_sistema.disabled = (
-
-            status
-
-            or
-
-            not pode_editar
-
-            or
-
-            not is_root
-        )
-
-        ddl_copiar.disabled = (
-            status or not pode_editar
-        )
-
-        page.update()
-
-    # ==============================================
-    # STATUS
-    # ==============================================
-
-    def status(
-        texto,
-        erro=True
-    ):
-
-        txt_status.value = texto
-
-        txt_status.color = (
-
-            ft.Colors.RED
-
-            if erro
-
-            else ft.Colors.GREEN
-        )
-
-        page.update()
-
-    # ==============================================
-    # VOLTAR
-    # ==============================================
-
-    def voltar_dashboard(e=None):
-
-        navegar(page, "dashboard")
-
-    btn_voltar.on_click = voltar_dashboard
-
-    # ==============================================
-    # VISIBILIDADE
-    # ==============================================
-
-    def pode_visualizar(p):
-
-        if is_root:
-            return True
-
-        if p.get("sistema"):
-            return False
-
-        if int(
-            p.get(
-                "admin_level",
-                0
-            )
-        ) >= usuario_level:
-
-            return False
-
-        return True
-
-    # ==============================================
-    # LIMPAR
-    # ==============================================
-
-    def limpar(e=None):
-
-        perfil_editando["id"] = None
+        txt_id.value = ""
 
         txt_nome.value = ""
 
         txt_validade.value = ""
 
-        txt_admin.value = "10"
+        txt_admin_level.value = "10"
 
         chk_ativo.value = True
 
         chk_sistema.value = False
 
-        ddl_copiar.value = None
-
-        txt_status.value = ""
-
-        page.update()
-
-    btn_limpar.on_click = limpar
-
     # ==============================================
-    # EDITAR
+    # CARD PERFIL
     # ==============================================
 
-    def editar(p):
+    def criar_card(perfil):
 
-        if not pode_editar:
-
-            exibir_snackbar(
-
-                page,
-
-                "Sem permissão.",
-
-                erro=True
-            )
-
-            return
-
-        perfil_editando["id"] = p["id"]
-
-        txt_nome.value = str(
-            p["nome"]
-        ).strip()
-
-        txt_validade.value = str(
-
-            p.get(
-                "validade"
-            ) or ""
+        level = int(
+            perfil["admin_level"]
         )
-
-        txt_admin.value = str(
-
-            p.get(
-                "admin_level",
-                10
-            )
-        )
-
-        chk_ativo.value = bool(
-            p["ativo"]
-        )
-
-        chk_sistema.value = bool(
-            p.get("sistema")
-        )
-
-        page.update()
-
-    # ==============================================
-    # PERMISSÕES
-    # ==============================================
-
-    def abrir_permissoes(p):
-
-        page.perfil_permissoes = (
-            p["id"]
-        )
-
-        navegar(
-            page,
-            "menu_config"
-        )
-
-    # ==============================================
-    # SALVAR
-    # ==============================================
-
-    def salvar(e=None):
-
-        nonlocal carregando
-
-        if carregando:
-            return
-
-        carregando = True
-
-        bloquear_ui(True)
-
-        try:
-
-            nome = str(
-
-                txt_nome.value or ""
-
-            ).strip()
-
-            if not nome:
-
-                raise Exception(
-                    "Informe nome."
-                )
-
-            validade = None
-
-            if txt_validade.value:
-
-                validade = int(
-                    txt_validade.value
-                )
-
-            admin_level = int(
-
-                txt_admin.value or 0
-            )
-
-            ativo = int(
-                bool(
-                    chk_ativo.value
-                )
-            )
-
-            sistema = int(
-                bool(
-                    chk_sistema.value
-                )
-            )
-
-            # ======================================
-            # UPDATE
-            # ======================================
-
-            if perfil_editando["id"]:
-
-                resultado = atualizar_perfil(
-
-                    usuario,
-
-                    perfil_editando["id"],
-
-                    nome,
-
-                    validade,
-
-                    admin_level,
-
-                    ativo,
-
-                    sistema
-                )
-
-                perfil_id = (
-                    perfil_editando["id"]
-                )
-
-            # ======================================
-            # INSERT
-            # ======================================
-
-            else:
-
-                resultado = criar_perfil(
-
-                    usuario,
-
-                    nome,
-
-                    validade,
-
-                    admin_level,
-
-                    ativo,
-
-                    sistema
-                )
-
-                perfil_id = resultado[
-                    "dados"
-                ]
-
-            if not resultado["sucesso"]:
-
-                raise Exception(
-                    resultado["mensagem"]
-                )
-
-            # ======================================
-            # COPIAR
-            # ======================================
-
-            if ddl_copiar.value:
-
-                copiar = copiar_permissoes(
-
-                    usuario,
-
-                    int(
-                        ddl_copiar.value
-                    ),
-
-                    perfil_id
-                )
-
-                if not copiar["sucesso"]:
-
-                    raise Exception(
-                        copiar["mensagem"]
-                    )
-
-            limpar()
-
-            carregar()
-
-            exibir_snackbar(
-
-                page,
-
-                resultado["mensagem"]
-            )
-
-        except Exception as ex:
-
-            logging.exception(
-                "PERFIL SAVE ERROR"
-            )
-
-            status(str(ex))
-
-        finally:
-
-            carregando = False
-
-            bloquear_ui(False)
-
-    btn_salvar.on_click = salvar
-
-    # ==============================================
-    # EXCLUIR
-    # ==============================================
-
-    def remover(p):
-
-        try:
-
-            resultado = excluir_perfil(
-
-                usuario,
-
-                p["id"]
-            )
-
-            if not resultado["sucesso"]:
-
-                raise Exception(
-                    resultado["mensagem"]
-                )
-
-            carregar()
-
-            exibir_snackbar(
-
-                page,
-
-                resultado["mensagem"]
-            )
-
-        except Exception as ex:
-
-            logging.exception(
-                "PERFIL DELETE ERROR"
-            )
-
-            exibir_snackbar(
-
-                page,
-
-                str(ex),
-
-                erro=True
-            )
-
-    # ==============================================
-    # GRID
-    # ==============================================
-
-    def render_perfil(p):
 
         sistema = bool(
-            p.get("sistema")
+            perfil["sistema"]
         )
 
-        cor = None
-
-        if sistema:
-
-            cor = ft.Colors.RED_50
-
-        elif not p["ativo"]:
-
-            cor = ft.Colors.GREY_200
-
-        controles = []
-
-        # ==========================================
-        # EDITAR
-        # ==========================================
-
-        if pode_editar:
-
-            controles.append(
-
-                ft.IconButton(
-
-                    icon=ft.Icons.EDIT,
-
-                    tooltip="Editar",
-
-                    disabled=(
-
-                        sistema
-
-                        and
-
-                        not is_root
-                    ),
-
-                    on_click=lambda e,
-                    x=p: editar(x)
-                )
-            )
-
-            controles.append(
-
-                ft.IconButton(
-
-                    icon=ft.Icons.SECURITY,
-
-                    tooltip="Permissões",
-
-                    disabled=(
-
-                        sistema
-
-                        and
-
-                        not is_root
-                    ),
-
-                    on_click=lambda e,
-                    x=p: abrir_permissoes(x)
-                )
-            )
-
-        # ==========================================
-        # DELETE
-        # ==========================================
-
-        if pode_excluir:
-
-            controles.append(
-
-                ft.IconButton(
-
-                    icon=ft.Icons.DELETE,
-
-                    tooltip="Excluir",
-
-                    disabled=(
-
-                        sistema
-
-                        or
-
-                        p["id"] == 1
-                    ),
-
-                    on_click=lambda e,
-                    x=p: remover(x)
-                )
-            )
+        ativo = bool(
+            perfil["ativo"]
+        )
 
         return ft.Container(
 
-            content=ft.Row([
+            padding=12,
 
-                ft.Text(
+            border_radius=12,
 
-                    p["nome"],
-
-                    width=220,
-
-                    weight=(
-
-                        "bold"
-
-                        if sistema
-
-                        else None
-                    )
-                ),
-
-                ft.Text(
-
-                    str(
-                        p.get(
-                            "validade"
-                        ) or ""
-                    ),
-
-                    width=120
-                ),
-
-                ft.Text(
-
-                    str(
-                        p.get(
-                            "admin_level",
-                            0
-                        )
-                    ),
-
-                    width=80
-                ),
-
-                ft.Text(
-
-                    "Estrutural"
-
-                    if sistema
-
-                    else "",
-
-                    width=120,
-
-                    color=ft.Colors.RED
-                ),
-
-                ft.Text(
-
-                    "Ativo"
-
-                    if p["ativo"]
-
-                    else "Inativo",
-
-                    width=90
-                ),
-
-                *controles
-
-            ],
-
-                wrap=True
-            ),
-
-            padding=10,
+            bgcolor=ft.Colors.WHITE,
 
             border=ft.border.all(
 
@@ -902,211 +331,563 @@ def perfis_view(page):
                 ft.Colors.GREY_300
             ),
 
-            border_radius=8,
+            content=ft.Row([
 
-            bgcolor=cor
-        )
+                # ==================================
+                # INFO
+                # ==================================
 
-    # ==============================================
-    # CARREGAR
-    # ==============================================
+                ft.Container(
 
-    def carregar():
+                    expand=True,
 
-        lista.controls.clear()
+                    content=ft.Column([
 
-        ddl_copiar.options.clear()
+                        ft.Row([
 
-        resultado = listar_perfis(
-            usuario
-        )
+                            ft.Icon(
 
-        if not resultado["sucesso"]:
+                                ft.Icons.ADMIN_PANEL_SETTINGS,
 
-            status(
-                resultado["mensagem"]
-            )
+                                color=get_cor_admin(
+                                    level
+                                )
+                            ),
 
-            return
+                            ft.Text(
 
-        perfis_cache.clear()
+                                perfil["nome"],
 
-        perfis_cache.extend(
-            resultado["dados"]
-        )
+                                size=16,
 
-        for p in perfis_cache:
+                                weight="bold"
+                            ),
 
-            if not pode_visualizar(p):
-                continue
+                            ft.Container(
 
-            ddl_copiar.options.append(
+                                padding=ft.padding.symmetric(
 
-                ft.dropdown.Option(
+                                    horizontal=8,
 
-                    str(p["id"]),
+                                    vertical=2
+                                ),
 
-                    (
-                        f"{p['nome']} "
-                        f"(L{p.get('admin_level',0)})"
+                                bgcolor=get_cor_admin(
+                                    level
+                                ),
+
+                                border_radius=20,
+
+                                content=ft.Text(
+
+                                    get_nome_admin(
+                                        level
+                                    ),
+
+                                    color=ft.Colors.WHITE,
+
+                                    size=11
+                                )
+                            )
+
+                        ],
+                            spacing=10
+                        ),
+
+                        ft.Text(
+
+                            (
+                                f"ID: {perfil['id']} | "
+                                f"AdminLevel: {level}"
+                            ),
+
+                            size=11,
+
+                            color=ft.Colors.GREY_700
+                        ),
+
+                        ft.Row([
+
+                            ft.Icon(
+
+                                (
+                                    ft.Icons.CHECK_CIRCLE
+                                    if ativo
+                                    else
+                                    ft.Icons.CANCEL
+                                ),
+
+                                color=(
+
+                                    ft.Colors.GREEN
+
+                                    if ativo
+
+                                    else
+
+                                    ft.Colors.RED
+                                ),
+
+                                size=16
+                            ),
+
+                            ft.Text(
+
+                                (
+                                    "Ativo"
+                                    if ativo
+                                    else
+                                    "Inativo"
+                                ),
+
+                                size=12
+                            ),
+
+                            ft.Container(width=20),
+
+                            ft.Icon(
+
+                                (
+                                    ft.Icons.SECURITY
+                                    if sistema
+                                    else
+                                    ft.Icons.PERSON
+                                ),
+
+                                color=(
+
+                                    ft.Colors.BLUE
+
+                                    if sistema
+
+                                    else
+
+                                    ft.Colors.GREY
+                                ),
+
+                                size=16
+                            ),
+
+                            ft.Text(
+
+                                (
+                                    "Sistêmico"
+                                    if sistema
+                                    else
+                                    "Operacional"
+                                ),
+
+                                size=12
+                            )
+
+                        ],
+                            spacing=6
+                        )
+
+                    ],
+                        spacing=6
                     )
+                ),
+
+                # ==================================
+                # AÇÕES
+                # ==================================
+
+                ft.Row([
+
+                    ft.IconButton(
+
+                        icon=ft.Icons.EDIT,
+
+                        disabled=(
+                            not pode_editar
+                        ),
+
+                        on_click=lambda e,
+                        p=perfil: editar(p)
+                    ),
+
+                    ft.IconButton(
+
+                        icon=ft.Icons.DELETE,
+
+                        disabled=(
+                            not pode_editar
+                        ),
+
+                        icon_color=ft.Colors.RED,
+
+                        on_click=lambda e,
+                        p=perfil: remover(p)
+                    )
+
+                ])
+            ])
+        )
+
+    # ==============================================
+    # LOAD
+    # ==============================================
+
+    def carregar_perfis_view(e=None):
+
+        try:
+
+            filtro = str(
+                txt_filtro.value or ""
+            ).strip()
+
+            tabela.controls.clear()
+
+            perfis = listar_perfis(
+                filtro
+            )
+
+            for perfil in perfis:
+
+                tabela.controls.append(
+                    criar_card(perfil)
                 )
+
+            page.update()
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "LOAD PERFIS ERROR"
             )
 
-        filtro = str(
-
-            txt_filtro.value or ""
-
-        ).strip().upper()
-
-        for p in perfis_cache:
-
-            if not pode_visualizar(p):
-                continue
-
-            texto = (
-                f"{p['nome']} "
-                f"{p.get('admin_level',0)}"
-            ).upper()
-
-            if filtro:
-
-                if filtro not in texto:
-                    continue
-
-            lista.controls.append(
-                render_perfil(p)
+            snackbar(
+                page,
+                str(ex),
+                erro=True
             )
+
+    # ==============================================
+    # EDIT
+    # ==============================================
+
+    def editar(perfil):
+
+        txt_id.value = perfil["id"]
+
+        txt_nome.value = perfil["nome"]
+
+        txt_validade.value = str(
+            perfil["validade_senha"]
+            or ""
+        )
+
+        txt_admin_level.value = str(
+            perfil["admin_level"]
+        )
+
+        chk_ativo.value = bool(
+            perfil["ativo"]
+        )
+
+        chk_sistema.value = bool(
+            perfil["sistema"]
+        )
 
         page.update()
 
+    # ==============================================
+    # REMOVE
+    # ==============================================
+
+    def remover(perfil):
+
+        try:
+
+            excluir_perfil(
+
+                perfil["id"],
+
+                usuario
+            )
+
+            carregar_perfis_view()
+
+            snackbar(
+                page,
+                "Perfil removido."
+            )
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "DELETE PERFIL ERROR"
+            )
+
+            snackbar(
+                page,
+                str(ex),
+                erro=True
+            )
+
+    # ==============================================
+    # SAVE
+    # ==============================================
+
+    def salvar(e):
+
+        try:
+
+            if not pode_editar:
+
+                snackbar(
+                    page,
+                    "Sem permissão.",
+                    erro=True
+                )
+
+                return
+
+            payload = {
+
+                "nome": txt_nome.value,
+
+                "validade_senha": (
+                    txt_validade.value
+                ),
+
+                "admin_level": (
+                    txt_admin_level.value
+                ),
+
+                "ativo": chk_ativo.value,
+
+                "sistema": chk_sistema.value
+            }
+
+            # ======================================
+            # NOVO
+            # ======================================
+
+            if not txt_id.value:
+
+                criar_perfil(
+
+                    payload,
+
+                    usuario
+                )
+
+                snackbar(
+                    page,
+                    "Perfil criado."
+                )
+
+            # ======================================
+            # UPDATE
+            # ======================================
+
+            else:
+
+                atualizar_perfil(
+
+                    int(txt_id.value),
+
+                    payload,
+
+                    usuario
+                )
+
+                snackbar(
+                    page,
+                    "Perfil atualizado."
+                )
+
+            limpar()
+
+            carregar_perfis_view()
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "SAVE PERFIL ERROR"
+            )
+
+            snackbar(
+                page,
+                str(ex),
+                erro=True
+            )
+
+    # ==============================================
+    # EVENTOS
+    # ==============================================
+
     txt_filtro.on_change = (
-        lambda e: carregar()
+        carregar_perfis_view
+    )
+
+    # ==============================================
+    # BOTÕES
+    # ==============================================
+
+    btn_novo = ft.OutlinedButton(
+
+        "Novo",
+
+        icon=ft.Icons.ADD,
+
+        disabled=not pode_editar,
+
+        on_click=lambda e: (
+            limpar(),
+            page.update()
+        )
+    )
+
+    btn_salvar = ft.ElevatedButton(
+
+        "Salvar",
+
+        icon=ft.Icons.SAVE,
+
+        disabled=not pode_editar,
+
+        on_click=salvar
+    )
+
+    btn_voltar = ft.TextButton(
+
+        "Voltar",
+
+        icon=ft.Icons.ARROW_BACK,
+
+        on_click=lambda e: navegar(
+            page,
+            "dashboard"
+        )
     )
 
     # ==============================================
     # INIT
     # ==============================================
 
-    carregar()
+    limpar()
+
+    carregar_perfis_view()
 
     # ==============================================
     # LAYOUT
     # ==============================================
 
-    return ft.Column([
-
-        ft.Row([
-
-            ft.Text(
-
-                "Perfis",
-
-                size=28,
-
-                weight="bold"
-            ),
-
-            progress
-
-        ],
-
-            alignment=(
-                ft.MainAxisAlignment.SPACE_BETWEEN
-            )
-        ),
-
-        ft.Divider(),
-
-        txt_filtro,
-
-        ft.Row([
-
-            txt_nome,
-
-            txt_validade,
-
-            txt_admin
-
-        ],
-
-            wrap=True
-        ),
-
-        ft.Row([
-
-            chk_ativo,
-
-            chk_sistema
-
-        ]),
-
-        ddl_copiar,
-
-        txt_status,
-
-        ft.Row([
-
-            btn_salvar,
-
-            btn_limpar,
-
-            btn_voltar
-
-        ],
-
-            wrap=True
-        ),
-
-        ft.Divider(),
-
-        ft.Container(
-
-            content=ft.Row([
-
-                ft.Text(
-                    "Nome",
-                    width=220,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Validade",
-                    width=120,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Level",
-                    width=80,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Estrutura",
-                    width=120,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Status",
-                    width=90,
-                    weight="bold"
-                )
-
-            ],
-
-                wrap=True
-            ),
-
-            padding=10
-        ),
-
-        lista
-
-    ],
+    return ft.Container(
 
         expand=True,
 
-        scroll=ft.ScrollMode.AUTO
+        padding=20,
+
+        content=ft.Column([
+
+            # ======================================
+            # HEADER
+            # ======================================
+
+            ft.Row([
+
+                ft.Column([
+
+                    ft.Text(
+
+                        "Perfis",
+
+                        size=30,
+
+                        weight="bold"
+                    ),
+
+                    ft.Text(
+
+                        APP_CONFIG["name"],
+
+                        size=13,
+
+                        color=ft.Colors.GREY_700
+                    )
+
+                ],
+                    spacing=2,
+                    expand=True
+                ),
+
+                btn_voltar
+            ]),
+
+            ft.Divider(),
+
+            # ======================================
+            # FORM
+            # ======================================
+
+            ft.Row([
+
+                txt_nome,
+
+                txt_validade,
+
+                txt_admin_level
+
+            ],
+
+                wrap=True,
+
+                spacing=12
+            ),
+
+            ft.Row([
+
+                chk_ativo,
+
+                chk_sistema
+
+            ]),
+
+            ft.Row([
+
+                btn_novo,
+
+                btn_salvar
+
+            ]),
+
+            ft.Divider(),
+
+            # ======================================
+            # FILTRO
+            # ======================================
+
+            ft.Row([
+
+                txt_filtro
+
+            ]),
+
+            # ======================================
+            # LISTA
+            # ======================================
+
+            ft.Container(
+
+                expand=True,
+
+                padding=12,
+
+                bgcolor=ft.Colors.GREY_100,
+
+                border_radius=12,
+
+                content=tabela
+            )
+
+        ],
+
+            spacing=16,
+
+            expand=True
+        )
     )

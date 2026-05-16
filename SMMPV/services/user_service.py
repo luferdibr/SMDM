@@ -1,22 +1,16 @@
-
 import logging
-import re
 
 from database.connection import (
     get_connection
 )
 
-from services.auth_service import (
+from security.password_service import (
     gerar_hash,
-    validar_hash
+    validar_politica_senha
 )
 
 from services.auditoria_service import (
     registrar_evento
-)
-
-from config.settings import (
-    ADMIN_CONFIG
 )
 
 
@@ -28,9 +22,7 @@ ROOT_LEVEL = 100
 
 ADMIN_LEVEL = 50
 
-SENHA_PADRAO = ADMIN_CONFIG["password"]
-
-LOGINS_RESERVADOS = {
+LOGINS_PROTEGIDOS = {
 
     "ROOT",
 
@@ -41,36 +33,17 @@ LOGINS_RESERVADOS = {
 
 
 # ==================================================
-# HELPERS
+# LOGGER
 # ==================================================
 
-def retorno(
-    sucesso,
-    mensagem="",
-    dados=None
-):
-
-    return {
-
-        "sucesso": bool(sucesso),
-
-        "mensagem": str(mensagem),
-
-        "dados": dados
-    }
+LOGGER = logging.getLogger(
+    "MDM_USER_SERVICE"
+)
 
 
-def auditoria_segura(**kwargs):
-
-    try:
-
-        registrar_evento(**kwargs)
-
-    except Exception:
-
-        logging.exception(
-            "AUDITORIA ERROR"
-        )
+# ==================================================
+# HELPERS
+# ==================================================
 
 
 def normalizar_login(login):
@@ -79,19 +52,6 @@ def normalizar_login(login):
         login or ""
     ).strip().upper()
 
-
-def is_root(usuario):
-
-    return bool(
-        usuario
-        and
-        int(
-            usuario.get(
-                "admin_level",
-                0
-            )
-        ) >= ROOT_LEVEL
-    )
 
 
 def get_admin_level(usuario):
@@ -107,103 +67,29 @@ def get_admin_level(usuario):
     )
 
 
-# ==================================================
-# SENHA
-# ==================================================
 
-def validar_senha(senha):
+def is_root(usuario):
 
-    senha = str(
-        senha or ""
-    ).strip()
+    return (
+        get_admin_level(usuario)
+        >= ROOT_LEVEL
+    )
 
-    if len(senha) < 9:
-        return False
 
-    if senha == SENHA_PADRAO:
-        return False
 
-    tem_letra = bool(
-        re.search(
-            r"[A-Za-z]",
-            senha
+def auditoria_segura(**kwargs):
+
+    try:
+
+        registrar_evento(**kwargs)
+
+    except Exception:
+
+        LOGGER.exception(
+            "AUDITORIA ERROR"
         )
-    )
-
-    tem_numero = bool(
-        re.search(
-            r"\d",
-            senha
-        )
-    )
-
-    tem_simbolo = bool(
-        re.search(
-            r"[!@#$%&*()_+=\-]",
-            senha
-        )
-    )
-
-    return bool(
-        tem_letra
-        and
-        tem_numero
-        and
-        tem_simbolo
-    )
 
 
-# ==================================================
-# PERFIL
-# ==================================================
-
-def map_perfil(row):
-
-    return {
-
-        "id": row[0],
-
-        "nome": row[1],
-
-        "ativo": bool(row[2]),
-
-        "sistema": bool(row[3]),
-
-        "admin_level": int(row[4] or 0)
-    }
-
-
-def obter_perfil(
-    cursor,
-    perfil_id
-):
-
-    cursor.execute("""
-
-        SELECT
-            Id,
-            Nome,
-            Ativo,
-            Sistema,
-            AdminLevel
-
-        FROM Perfis
-
-        WHERE Id = ?
-
-    """, (perfil_id,))
-
-    row = cursor.fetchone()
-
-    if not row:
-        return None
-
-    return map_perfil(row)
-
-
-# ==================================================
-# USER
-# ==================================================
 
 def map_usuario(row):
 
@@ -223,20 +109,76 @@ def map_usuario(row):
 
         "tentativas": int(row[6] or 0),
 
-        "ultimo_login": row[7],
+        "deve_trocar": bool(row[7]),
 
-        "sistema": bool(row[8]),
+        "ultimo_login": row[8],
 
-        "admin_level": int(row[9] or 0),
+        "perfil_nome": row[9],
 
-        "perfil_nome": row[10]
+        "admin_level": int(row[10] or 0),
+
+        "sistema": bool(row[11])
     }
 
 
-def obter_usuario(
-    cursor,
-    user_id
-):
+# ==================================================
+# PERFIL
+# ==================================================
+
+
+def obter_perfil(cursor, perfil_id):
+
+    cursor.execute("""
+
+        SELECT
+            Id,
+            Nome,
+            Ativo,
+            Sistema,
+            AdminLevel
+
+        FROM Perfis
+
+        WHERE Id = ?
+
+    """, (perfil_id,))
+
+    row = cursor.fetchone()
+
+    if not row:
+
+        raise Exception(
+            "Perfil inválido."
+        )
+
+    perfil = {
+
+        "id": row[0],
+
+        "nome": row[1],
+
+        "ativo": bool(row[2]),
+
+        "sistema": bool(row[3]),
+
+        "admin_level": int(row[4] or 0)
+    }
+
+    if not perfil["ativo"]:
+
+        raise Exception(
+            "Perfil inativo."
+        )
+
+    return perfil
+
+
+# ==================================================
+# USUÁRIO
+# ==================================================
+
+
+def obter_usuario(cursor, usuario_id):
 
     cursor.execute("""
 
@@ -248,11 +190,12 @@ def obter_usuario(
             u.Ativo,
             u.Bloqueado,
             u.TentativasLogin,
+            u.DeveTrocarSenha,
             u.DataUltimoLogin,
 
-            p.Sistema,
+            p.Nome,
             p.AdminLevel,
-            p.Nome
+            p.Sistema
 
         FROM Usuarios u
 
@@ -261,7 +204,7 @@ def obter_usuario(
 
         WHERE u.Id = ?
 
-    """, (user_id,))
+    """, (usuario_id,))
 
     row = cursor.fetchone()
 
@@ -272,14 +215,13 @@ def obter_usuario(
 
 
 # ==================================================
-# SEGURANÇA
+# VALIDAÇÕES
 # ==================================================
+
 
 def validar_login(login):
 
-    login = normalizar_login(
-        login
-    )
+    login = normalizar_login(login)
 
     if not login:
 
@@ -290,10 +232,10 @@ def validar_login(login):
     if len(login) < 3:
 
         raise Exception(
-            "Login muito curto."
+            "Login inválido."
         )
 
-    if login in LOGINS_RESERVADOS:
+    if login in LOGINS_PROTEGIDOS:
 
         raise Exception(
             f"Login reservado: {login}"
@@ -302,122 +244,14 @@ def validar_login(login):
     return login
 
 
-def validar_perfil(
-    perfil
-):
-
-    if not perfil:
-
-        raise Exception(
-            "Perfil inválido."
-        )
-
-    if not perfil["ativo"]:
-
-        raise Exception(
-            "Perfil inativo."
-        )
-
-
-def validar_permissao_perfil(
-    usuario_logado,
-    perfil
-):
-
-    if not usuario_logado:
-
-        raise Exception(
-            "Usuário inválido."
-        )
-
-    validar_perfil(perfil)
-
-    usuario_level = get_admin_level(
-        usuario_logado
-    )
-
-    # ==============================================
-    # ROOT
-    # ==============================================
-
-    if usuario_level >= ROOT_LEVEL:
-        return
-
-    # ==============================================
-    # PERFIL SISTEMA
-    # ==============================================
-
-    if perfil["sistema"]:
-
-        raise Exception(
-            "Perfil estrutural protegido."
-        )
-
-    # ==============================================
-    # NÍVEL
-    # ==============================================
-
-    if perfil["admin_level"] >= usuario_level:
-
-        raise Exception(
-            "Sem permissão para este perfil."
-        )
-
-
-def validar_usuario_alvo(
-    usuario_logado,
-    usuario_alvo
-):
-
-    if not usuario_alvo:
-
-        raise Exception(
-            "Usuário inválido."
-        )
-
-    usuario_level = get_admin_level(
-        usuario_logado
-    )
-
-    # ==============================================
-    # ROOT
-    # ==============================================
-
-    if usuario_level >= ROOT_LEVEL:
-        return
-
-    # ==============================================
-    # SISTEMA
-    # ==============================================
-
-    if usuario_alvo["sistema"]:
-
-        raise Exception(
-            "Usuário estrutural protegido."
-        )
-
-    # ==============================================
-    # LEVEL
-    # ==============================================
-
-    if usuario_alvo["admin_level"] >= usuario_level:
-
-        raise Exception(
-            "Sem permissão para este usuário."
-        )
-
-
-# ==================================================
-# DUPLICIDADE
-# ==================================================
 
 def validar_duplicidade(
     cursor,
     login,
-    user_id=None
+    usuario_id=None
 ):
 
-    if user_id:
+    if usuario_id:
 
         cursor.execute("""
 
@@ -431,7 +265,7 @@ def validar_duplicidade(
 
         """, (
             login,
-            user_id
+            usuario_id
         ))
 
     else:
@@ -453,11 +287,73 @@ def validar_duplicidade(
         )
 
 
+
+def validar_permissao_perfil(
+    usuario_logado,
+    perfil
+):
+
+    usuario_level = get_admin_level(
+        usuario_logado
+    )
+
+    if usuario_level >= ROOT_LEVEL:
+        return
+
+    if perfil["sistema"]:
+
+        raise Exception(
+            "Perfil estrutural protegido."
+        )
+
+    if perfil["admin_level"] >= usuario_level:
+
+        raise Exception(
+            "Sem permissão para este perfil."
+        )
+
+
+
+def validar_usuario_alvo(
+    usuario_logado,
+    usuario_alvo
+):
+
+    if not usuario_alvo:
+
+        raise Exception(
+            "Usuário inválido."
+        )
+
+    usuario_level = get_admin_level(
+        usuario_logado
+    )
+
+    if usuario_level >= ROOT_LEVEL:
+        return
+
+    if usuario_alvo["sistema"]:
+
+        raise Exception(
+            "Usuário estrutural protegido."
+        )
+
+    if (
+        usuario_alvo["admin_level"]
+        >= usuario_level
+    ):
+
+        raise Exception(
+            "Sem permissão para este usuário."
+        )
+
+
 # ==================================================
 # LISTAR PERFIS
 # ==================================================
 
-def listar_perfis(usuario_logado):
+
+def listar_perfis():
 
     conn = None
 
@@ -467,17 +363,13 @@ def listar_perfis(usuario_logado):
 
         cursor = conn.cursor()
 
-        usuario_level = get_admin_level(
-            usuario_logado
-        )
-
         cursor.execute("""
 
             SELECT
                 Id,
                 Nome,
-                Sistema,
-                AdminLevel
+                AdminLevel,
+                Sistema
 
             FROM Perfis
 
@@ -491,49 +383,30 @@ def listar_perfis(usuario_logado):
 
         rows = cursor.fetchall()
 
-        perfis = []
+        retorno = []
 
-        for r in rows:
+        for row in rows:
 
-            sistema = bool(r[2])
+            retorno.append({
 
-            admin_level = int(r[3] or 0)
+                "id": row[0],
 
-            if not is_root(usuario_logado):
+                "nome": row[1],
 
-                if sistema:
-                    continue
+                "admin_level": int(row[2] or 0),
 
-                if admin_level >= usuario_level:
-                    continue
-
-            perfis.append({
-
-                "id": r[0],
-
-                "nome": r[1],
-
-                "sistema": sistema,
-
-                "admin_level": admin_level
+                "sistema": bool(row[3])
             })
 
-        return retorno(
-            True,
-            dados=perfis
-        )
+        return retorno
 
-    except Exception as ex:
+    except Exception:
 
-        logging.exception(
+        LOGGER.exception(
             "LIST PERFIS ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex),
-            []
-        )
+        raise
 
     finally:
 
@@ -547,10 +420,11 @@ def listar_perfis(usuario_logado):
 
 
 # ==================================================
-# LISTAR USERS
+# LISTAR USUÁRIOS
 # ==================================================
 
-def listar_usuarios(usuario_logado):
+
+def listar_usuarios(filtro=""):
 
     conn = None
 
@@ -560,93 +434,83 @@ def listar_usuarios(usuario_logado):
 
         cursor = conn.cursor()
 
-        usuario_level = get_admin_level(
-            usuario_logado
-        )
+        filtro = str(
+            filtro or ""
+        ).strip()
 
-        cursor.execute("""
+        query = """
 
             SELECT
                 u.Id,
                 u.Login,
                 u.Nome,
+                u.PerfilId,
                 u.Ativo,
                 u.Bloqueado,
                 u.TentativasLogin,
+                u.DeveTrocarSenha,
                 u.DataUltimoLogin,
 
-                p.Sistema,
+                p.Nome,
                 p.AdminLevel,
-                p.Nome
+                p.Sistema
 
             FROM Usuarios u
 
             INNER JOIN Perfis p
                 ON p.Id = u.PerfilId
 
+        """
+
+        params = []
+
+        if filtro:
+
+            query += """
+
+                WHERE
+                    u.Login LIKE ?
+                    OR
+                    u.Nome LIKE ?
+
+            """
+
+            like = f"%{filtro}%"
+
+            params.extend([
+                like,
+                like
+            ])
+
+        query += """
+
             ORDER BY
                 p.AdminLevel DESC,
                 u.Login
 
-        """)
+        """
+
+        cursor.execute(query, params)
 
         rows = cursor.fetchall()
 
-        usuarios = []
+        retorno = []
 
-        for r in rows:
+        for row in rows:
 
-            sistema = bool(r[7])
+            retorno.append(
+                map_usuario(row)
+            )
 
-            admin_level = int(r[8] or 0)
+        return retorno
 
-            if not is_root(usuario_logado):
+    except Exception:
 
-                if sistema:
-                    continue
-
-                if admin_level >= usuario_level:
-                    continue
-
-            usuarios.append({
-
-                "id": r[0],
-
-                "login": r[1],
-
-                "nome": r[2],
-
-                "ativo": bool(r[3]),
-
-                "bloqueado": bool(r[4]),
-
-                "tentativas": int(r[5] or 0),
-
-                "ultimo_login": r[6],
-
-                "sistema": sistema,
-
-                "admin_level": admin_level,
-
-                "perfil_nome": r[9]
-            })
-
-        return retorno(
-            True,
-            dados=usuarios
+        LOGGER.exception(
+            "LIST USERS ERROR"
         )
 
-    except Exception as ex:
-
-        logging.exception(
-            "USER LIST ERROR"
-        )
-
-        return retorno(
-            False,
-            str(ex),
-            []
-        )
+        raise
 
     finally:
 
@@ -663,11 +527,10 @@ def listar_usuarios(usuario_logado):
 # CRIAR
 # ==================================================
 
+
 def criar_usuario(
-    usuario_logado,
-    login,
-    nome,
-    perfil_id
+    dados,
+    usuario_logado
 ):
 
     conn = None
@@ -675,12 +538,32 @@ def criar_usuario(
     try:
 
         login = validar_login(
-            login
+            dados.get("login")
         )
 
         nome = str(
-            nome or login
+            dados.get("nome") or login
         ).strip()
+
+        senha = str(
+            dados.get("senha") or ""
+        ).strip()
+
+        perfil_id = int(
+            dados.get("perfil_id")
+        )
+
+        politica = validar_politica_senha(
+            senha
+        )
+
+        if not politica["valida"]:
+
+            raise Exception(
+                " | ".join(
+                    politica["erros"]
+                )
+            )
 
         conn = get_connection()
 
@@ -702,7 +585,7 @@ def criar_usuario(
         )
 
         senha_hash = gerar_hash(
-            SENHA_PADRAO
+            senha
         )
 
         cursor.execute("""
@@ -718,32 +601,31 @@ def criar_usuario(
                 TentativasLogin,
                 DeveTrocarSenha,
                 SenhaTemporaria,
-                SenhaMigrada
+                DataUltimaTrocaSenha
             )
-
-            OUTPUT INSERTED.Id
 
             VALUES
             (
-                ?, ?, ?,
-                ?,
-                1,
-                0,
-                0,
-                1,
-                1,
-                1
+                ?, ?, ?, ?,
+                ?, 0, 0,
+                ?, 0,
+                GETDATE()
             )
 
         """, (
 
             login,
-            nome,
-            senha_hash,
-            perfil_id
-        ))
 
-        user_id = cursor.fetchone()[0]
+            nome,
+
+            senha_hash,
+
+            perfil_id,
+
+            int(dados.get("ativo", True)),
+
+            int(dados.get("trocar", False))
+        ))
 
         conn.commit()
 
@@ -757,33 +639,21 @@ def criar_usuario(
 
             entidade="Usuarios",
 
-            registro_id=user_id,
-
-            detalhes=(
-                f"login={login};"
-                f"perfil={perfil['nome']}"
-            )
+            detalhes=f"Login={login}"
         )
 
-        return retorno(
-            True,
-            "Usuário criado.",
-            user_id
-        )
+        return True
 
-    except Exception as ex:
+    except Exception:
 
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "USER CREATE ERROR"
+        LOGGER.exception(
+            "CREATE USER ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex)
-        )
+        raise
 
     finally:
 
@@ -797,36 +667,19 @@ def criar_usuario(
 
 
 # ==================================================
-# ATUALIZAR
+# UPDATE
 # ==================================================
 
+
 def atualizar_usuario(
-    usuario_logado,
-    user_id,
-    login,
-    nome,
-    perfil_id,
-    ativo=1,
-    bloqueado=0
+    usuario_id,
+    dados,
+    usuario_logado
 ):
 
     conn = None
 
     try:
-
-        if not user_id:
-
-            raise Exception(
-                "Usuário inválido."
-            )
-
-        login = validar_login(
-            login
-        )
-
-        nome = str(
-            nome or login
-        ).strip()
 
         conn = get_connection()
 
@@ -834,7 +687,7 @@ def atualizar_usuario(
 
         usuario_alvo = obter_usuario(
             cursor,
-            user_id
+            usuario_id
         )
 
         validar_usuario_alvo(
@@ -844,7 +697,7 @@ def atualizar_usuario(
 
         perfil = obter_perfil(
             cursor,
-            perfil_id
+            int(dados["perfil_id"])
         )
 
         validar_permissao_perfil(
@@ -852,61 +705,91 @@ def atualizar_usuario(
             perfil
         )
 
-        validar_duplicidade(
-            cursor,
-            login,
-            user_id
-        )
+        senha = str(
+            dados.get("senha") or ""
+        ).strip()
 
         # ==========================================
-        # AUTO PROTEÇÃO
+        # COM SENHA
         # ==========================================
 
-        if (
-            usuario_logado.get("id")
-            == user_id
-        ):
+        if senha:
 
-            ativo = 1
+            politica = validar_politica_senha(
+                senha
+            )
 
-            bloqueado = 0
+            if not politica["valida"]:
+
+                raise Exception(
+                    " | ".join(
+                        politica["erros"]
+                    )
+                )
+
+            senha_hash = gerar_hash(
+                senha
+            )
+
+            cursor.execute("""
+
+                UPDATE Usuarios
+
+                SET
+                    Nome = ?,
+                    PerfilId = ?,
+                    Ativo = ?,
+                    DeveTrocarSenha = ?,
+                    SenhaHash = ?,
+                    DataUltimaTrocaSenha = GETDATE()
+
+                WHERE Id = ?
+
+            """, (
+
+                dados["nome"],
+
+                dados["perfil_id"],
+
+                int(dados["ativo"]),
+
+                int(dados["trocar"]),
+
+                senha_hash,
+
+                usuario_id
+            ))
 
         # ==========================================
-        # ROOT
+        # SEM SENHA
         # ==========================================
 
-        if usuario_alvo["admin_level"] >= ROOT_LEVEL:
+        else:
 
-            ativo = 1
+            cursor.execute("""
 
-            bloqueado = 0
+                UPDATE Usuarios
 
-            perfil_id = usuario_alvo[
-                "perfil_id"
-            ]
+                SET
+                    Nome = ?,
+                    PerfilId = ?,
+                    Ativo = ?,
+                    DeveTrocarSenha = ?
 
-        cursor.execute("""
+                WHERE Id = ?
 
-            UPDATE Usuarios
+            """, (
 
-            SET
-                Login = ?,
-                Nome = ?,
-                PerfilId = ?,
-                Ativo = ?,
-                Bloqueado = ?
+                dados["nome"],
 
-            WHERE Id = ?
+                dados["perfil_id"],
 
-        """, (
+                int(dados["ativo"]),
 
-            login,
-            nome,
-            perfil_id,
-            int(bool(ativo)),
-            int(bool(bloqueado)),
-            user_id
-        ))
+                int(dados["trocar"]),
+
+                usuario_id
+            ))
 
         conn.commit()
 
@@ -916,31 +799,27 @@ def atualizar_usuario(
 
             login=usuario_logado.get("login"),
 
-            acao="ATUALIZAR_USUARIO",
+            acao="ALTERAR_USUARIO",
 
             entidade="Usuarios",
 
-            registro_id=user_id
+            registro_id=usuario_id,
+
+            detalhes=usuario_alvo["login"]
         )
 
-        return retorno(
-            True,
-            "Usuário atualizado."
-        )
+        return True
 
-    except Exception as ex:
+    except Exception:
 
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "USER UPDATE ERROR"
+        LOGGER.exception(
+            "UPDATE USER ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex)
-        )
+        raise
 
     finally:
 
@@ -954,125 +833,13 @@ def atualizar_usuario(
 
 
 # ==================================================
-# DESATIVAR
+# DELETE
 # ==================================================
+
 
 def excluir_usuario(
-    usuario_logado,
-    user_id
-):
-
-    conn = None
-
-    try:
-
-        if not user_id:
-
-            raise Exception(
-                "Usuário inválido."
-            )
-
-        conn = get_connection()
-
-        cursor = conn.cursor()
-
-        usuario_alvo = obter_usuario(
-            cursor,
-            user_id
-        )
-
-        validar_usuario_alvo(
-            usuario_logado,
-            usuario_alvo
-        )
-
-        # ==========================================
-        # AUTO
-        # ==========================================
-
-        if (
-            usuario_logado.get("id")
-            == user_id
-        ):
-
-            raise Exception(
-                "Não é permitido desativar o próprio usuário."
-            )
-
-        # ==========================================
-        # ROOT
-        # ==========================================
-
-        if usuario_alvo["admin_level"] >= ROOT_LEVEL:
-
-            raise Exception(
-                "ROOT não pode ser desativado."
-            )
-
-        cursor.execute("""
-
-            UPDATE Usuarios
-
-            SET
-                Ativo = 0,
-                Bloqueado = 1
-
-            WHERE Id = ?
-
-        """, (user_id,))
-
-        conn.commit()
-
-        auditoria_segura(
-
-            usuario_id=usuario_logado.get("id"),
-
-            login=usuario_logado.get("login"),
-
-            acao="DESATIVAR_USUARIO",
-
-            entidade="Usuarios",
-
-            registro_id=user_id
-        )
-
-        return retorno(
-            True,
-            "Usuário desativado."
-        )
-
-    except Exception as ex:
-
-        if conn:
-            conn.rollback()
-
-        logging.exception(
-            "USER DELETE ERROR"
-        )
-
-        return retorno(
-            False,
-            str(ex)
-        )
-
-    finally:
-
-        try:
-
-            if conn:
-                conn.close()
-
-        except Exception:
-            pass
-
-
-# ==================================================
-# RESET SENHA
-# ==================================================
-
-def resetar_senha(
-    usuario_logado,
-    user_id
+    usuario_id,
+    usuario_logado
 ):
 
     conn = None
@@ -1085,7 +852,7 @@ def resetar_senha(
 
         usuario_alvo = obter_usuario(
             cursor,
-            user_id
+            usuario_id
         )
 
         validar_usuario_alvo(
@@ -1093,29 +860,19 @@ def resetar_senha(
             usuario_alvo
         )
 
-        senha_hash = gerar_hash(
-            SENHA_PADRAO
-        )
+        if usuario_alvo["login"] == "ROOT":
+
+            raise Exception(
+                "ROOT não pode ser removido."
+            )
 
         cursor.execute("""
 
-            UPDATE Usuarios
-
-            SET
-                SenhaHash = ?,
-                DeveTrocarSenha = 1,
-                SenhaTemporaria = 1,
-                DataUltimaTrocaSenha = NULL,
-                TentativasLogin = 0,
-                Bloqueado = 0
+            DELETE FROM Usuarios
 
             WHERE Id = ?
 
-        """, (
-
-            senha_hash,
-            user_id
-        ))
+        """, (usuario_id,))
 
         conn.commit()
 
@@ -1125,165 +882,27 @@ def resetar_senha(
 
             login=usuario_logado.get("login"),
 
-            acao="RESETAR_SENHA",
+            acao="EXCLUIR_USUARIO",
 
             entidade="Usuarios",
 
-            registro_id=user_id
+            registro_id=usuario_id,
+
+            detalhes=usuario_alvo["login"]
         )
 
-        return retorno(
-            True,
-            "Senha resetada."
-        )
+        return True
 
-    except Exception as ex:
+    except Exception:
 
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "RESET PASSWORD ERROR"
+        LOGGER.exception(
+            "DELETE USER ERROR"
         )
 
-        return retorno(
-            False,
-            str(ex)
-        )
-
-    finally:
-
-        try:
-
-            if conn:
-                conn.close()
-
-        except Exception:
-            pass
-
-
-# ==================================================
-# ALTERAR SENHA
-# ==================================================
-
-def alterar_senha(
-    user_id,
-    nova_senha
-):
-
-    nova_senha = str(
-        nova_senha or ""
-    ).strip()
-
-    if not validar_senha(
-        nova_senha
-    ):
-
-        return retorno(
-            False,
-            "Senha fraca."
-        )
-
-    conn = None
-
-    try:
-
-        conn = get_connection()
-
-        cursor = conn.cursor()
-
-        cursor.execute("""
-
-            SELECT
-                SenhaHash,
-                Login
-
-            FROM Usuarios
-
-            WHERE Id = ?
-
-        """, (user_id,))
-
-        row = cursor.fetchone()
-
-        if not row:
-
-            return retorno(
-                False,
-                "Usuário não encontrado."
-            )
-
-        senha_atual_hash = row[0]
-
-        login = row[1]
-
-        if validar_hash(
-            nova_senha,
-            senha_atual_hash
-        )[0]:
-
-            return retorno(
-                False,
-                "A nova senha deve ser diferente da atual."
-            )
-
-        senha_hash = gerar_hash(
-            nova_senha
-        )
-
-        cursor.execute("""
-
-            UPDATE Usuarios
-
-            SET
-                SenhaHash = ?,
-                DeveTrocarSenha = 0,
-                SenhaTemporaria = 0,
-                DataUltimaTrocaSenha = GETDATE(),
-                TentativasLogin = 0,
-                Bloqueado = 0
-
-            WHERE Id = ?
-
-        """, (
-
-            senha_hash,
-            user_id
-        ))
-
-        conn.commit()
-
-        auditoria_segura(
-
-            usuario_id=user_id,
-
-            login=login,
-
-            acao="ALTERAR_SENHA",
-
-            entidade="Usuarios",
-
-            registro_id=user_id
-        )
-
-        return retorno(
-            True,
-            "Senha alterada."
-        )
-
-    except Exception as ex:
-
-        if conn:
-            conn.rollback()
-
-        logging.exception(
-            "CHANGE PASSWORD ERROR"
-        )
-
-        return retorno(
-            False,
-            str(ex)
-        )
+        raise
 
     finally:
 

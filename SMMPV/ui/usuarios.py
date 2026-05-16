@@ -3,13 +3,13 @@ import logging
 
 import flet as ft
 
-from ui.dashboard import navegar
+from config.settings import (
+    APP_CONFIG
+)
 
 from services.user_service import (
 
     listar_usuarios,
-
-    listar_perfis,
 
     criar_usuario,
 
@@ -17,11 +17,19 @@ from services.user_service import (
 
     excluir_usuario,
 
-    resetar_senha
+    resetar_senha_usuario
+)
+
+from services.perfil_service import (
+    listar_perfis
 )
 
 from services.menu_admin_service import (
     get_permissoes_usuario
+)
+
+from ui.dashboard import (
+    navegar
 )
 
 
@@ -30,6 +38,15 @@ from services.menu_admin_service import (
 # ==================================================
 
 ROOT_LEVEL = 100
+
+
+# ==================================================
+# LOGGER
+# ==================================================
+
+LOGGER = logging.getLogger(
+    "MDM_USUARIOS_UI"
+)
 
 
 # ==================================================
@@ -54,9 +71,12 @@ def get_usuario(page):
     return usuario
 
 
-def exibir_snackbar(
+def snackbar(
+
     page,
+
     mensagem,
+
     erro=False
 ):
 
@@ -75,12 +95,34 @@ def exibir_snackbar(
             else
 
             ft.Colors.GREEN_600
-        ),
-
-        open=True
+        )
     )
 
+    page.snack_bar.open = True
+
     page.update()
+
+
+def get_cor_admin(level):
+
+    if level >= ROOT_LEVEL:
+        return ft.Colors.RED
+
+    if level >= 50:
+        return ft.Colors.ORANGE
+
+    return ft.Colors.BLUE
+
+
+def get_nome_admin(level):
+
+    if level >= ROOT_LEVEL:
+        return "ROOT"
+
+    if level >= 50:
+        return "ADMIN"
+
+    return "OPERACIONAL"
 
 
 # ==================================================
@@ -89,63 +131,49 @@ def exibir_snackbar(
 
 def usuarios_view(page):
 
-    usuario = get_usuario(page)
+    usuario_logado = get_usuario(page)
 
     # ==============================================
     # SESSÃO
     # ==============================================
 
-    if not usuario:
+    if not usuario_logado:
 
         return ft.Container(
+
+            expand=True,
+
+            alignment=ft.alignment.center,
 
             content=ft.Column([
 
                 ft.Icon(
                     ft.Icons.ERROR,
-                    size=72,
+                    size=70,
                     color=ft.Colors.RED
                 ),
 
                 ft.Text(
                     "Sessão inválida.",
                     size=24,
-                    weight="bold",
-                    color=ft.Colors.RED
+                    weight="bold"
                 )
 
             ],
-
                 spacing=20,
-
                 horizontal_alignment=(
                     ft.CrossAxisAlignment.CENTER
                 )
-            ),
-
-            alignment=ft.Alignment(0, 0),
-
-            expand=True
+            )
         )
-
-    usuario_level = int(
-        usuario.get(
-            "admin_level",
-            0
-        )
-    )
-
-    is_root = (
-        usuario_level >= ROOT_LEVEL
-    )
 
     # ==============================================
-    # PERMISSÕES
+    # RBAC
     # ==============================================
 
     permissoes = get_permissoes_usuario(
 
-        usuario,
+        usuario_logado,
 
         "usuarios"
     )
@@ -153,6 +181,10 @@ def usuarios_view(page):
     if not permissoes.get("ver"):
 
         return ft.Container(
+
+            expand=True,
+
+            alignment=ft.alignment.center,
 
             content=ft.Column([
 
@@ -165,701 +197,183 @@ def usuarios_view(page):
                 ft.Text(
                     "Acesso negado.",
                     size=24,
-                    weight="bold",
-                    color=ft.Colors.RED
+                    weight="bold"
                 )
 
             ],
-
                 spacing=20,
-
                 horizontal_alignment=(
                     ft.CrossAxisAlignment.CENTER
                 )
-            ),
-
-            alignment=ft.Alignment(0, 0),
-
-            expand=True
+            )
         )
 
     pode_editar = bool(
         permissoes.get("editar")
     )
 
-    pode_excluir = bool(
-        permissoes.get("excluir")
-    )
-
-    carregando = False
-
-    usuario_editando = {
-        "id": None
-    }
-
-    usuarios_cache = []
-
     # ==============================================
     # COMPONENTES
     # ==============================================
 
-    txt_filtro = ft.TextField(
-
-        label="Pesquisar",
-
-        width=300,
-
-        prefix_icon=ft.Icons.SEARCH
+    txt_id = ft.TextField(
+        visible=False
     )
 
     txt_login = ft.TextField(
 
         label="Login",
 
-        width=220,
-
-        disabled=not pode_editar
+        width=220
     )
 
     txt_nome = ft.TextField(
 
         label="Nome",
 
-        width=300,
+        width=320
+    )
 
-        disabled=not pode_editar
+    txt_email = ft.TextField(
+
+        label="E-mail",
+
+        width=320
+    )
+
+    txt_senha = ft.TextField(
+
+        label="Senha",
+
+        password=True,
+
+        can_reveal_password=True,
+
+        width=240
     )
 
     ddl_perfil = ft.Dropdown(
 
         label="Perfil",
 
-        width=260,
-
-        disabled=not pode_editar
+        width=280
     )
 
     chk_ativo = ft.Checkbox(
 
         label="Ativo",
 
-        value=True,
-
-        disabled=not pode_editar
+        value=True
     )
 
-    chk_bloqueado = ft.Checkbox(
+    chk_trocar = ft.Checkbox(
 
-        label="Bloqueado",
+        label="Trocar senha no próximo login",
 
-        value=False,
-
-        disabled=not pode_editar
+        value=True
     )
 
-    txt_status = ft.Text(
-        "",
-        color=ft.Colors.RED
+    txt_filtro = ft.TextField(
+
+        label="Pesquisar",
+
+        width=320,
+
+        prefix_icon=ft.Icons.SEARCH
     )
 
-    progress = ft.ProgressRing(
-        visible=False
-    )
+    tabela = ft.Column(
 
-    lista = ft.Column(
-        spacing=6
-    )
+        spacing=8,
 
-    # ==============================================
-    # BOTÕES
-    # ==============================================
+        scroll=ft.ScrollMode.AUTO,
 
-    btn_salvar = ft.ElevatedButton(
-
-        "Salvar",
-
-        icon=ft.Icons.SAVE,
-
-        disabled=not pode_editar
-    )
-
-    btn_limpar = ft.OutlinedButton(
-
-        "Limpar",
-
-        icon=ft.Icons.CLEAR,
-
-        disabled=not pode_editar
-    )
-
-    btn_voltar = ft.ElevatedButton(
-
-        "Voltar",
-
-        icon=ft.Icons.ARROW_BACK
+        expand=True
     )
 
     # ==============================================
-    # UI LOCK
+    # HELPERS
     # ==============================================
 
-    def bloquear_ui(status):
+    def limpar():
 
-        progress.visible = status
-
-        btn_salvar.disabled = (
-            status or not pode_editar
-        )
-
-        btn_limpar.disabled = (
-            status or not pode_editar
-        )
-
-        btn_voltar.disabled = status
-
-        txt_login.disabled = (
-            status or not pode_editar
-        )
-
-        txt_nome.disabled = (
-            status or not pode_editar
-        )
-
-        ddl_perfil.disabled = (
-            status or not pode_editar
-        )
-
-        chk_ativo.disabled = (
-            status or not pode_editar
-        )
-
-        chk_bloqueado.disabled = (
-            status or not pode_editar
-        )
-
-        page.update()
-
-    # ==============================================
-    # STATUS
-    # ==============================================
-
-    def status(
-        texto,
-        erro=True
-    ):
-
-        txt_status.value = texto
-
-        txt_status.color = (
-
-            ft.Colors.RED
-
-            if erro
-
-            else ft.Colors.GREEN
-        )
-
-        page.update()
-
-    # ==============================================
-    # VOLTAR
-    # ==============================================
-
-    def voltar_dashboard(e=None):
-
-        navegar(page, "dashboard")
-
-    btn_voltar.on_click = voltar_dashboard
-
-    # ==============================================
-    # PERFIS
-    # ==============================================
-
-    resultado_perfis = listar_perfis(
-        usuario
-    )
-
-    if resultado_perfis["sucesso"]:
-
-        ddl_perfil.options = [
-
-            ft.dropdown.Option(
-
-                str(p["id"]),
-
-                (
-                    f"{p['nome']} "
-                    f"(L{p.get('admin_level',0)})"
-                )
-            )
-
-            for p in resultado_perfis[
-                "dados"
-            ]
-        ]
-
-    # ==============================================
-    # LIMPAR
-    # ==============================================
-
-    def limpar(e=None):
-
-        usuario_editando["id"] = None
+        txt_id.value = ""
 
         txt_login.value = ""
 
         txt_nome.value = ""
 
+        txt_email.value = ""
+
+        txt_senha.value = ""
+
         ddl_perfil.value = None
 
         chk_ativo.value = True
 
-        chk_bloqueado.value = False
-
-        txt_status.value = ""
-
-        page.update()
-
-    btn_limpar.on_click = limpar
+        chk_trocar.value = True
 
     # ==============================================
-    # VISIBILIDADE
+    # PERFIS
     # ==============================================
 
-    def pode_visualizar_usuario(u):
+    def carregar_perfis():
 
-        if is_root:
-            return True
+        try:
 
-        if u.get("sistema"):
-            return False
+            perfis = listar_perfis()
 
-        if int(
-            u.get(
+            ddl_perfil.options = [
+
+                ft.dropdown.Option(
+
+                    key=str(
+                        p["id"]
+                    ),
+
+                    text=(
+                        f"{p['nome']} "
+                        f"[{p['admin_level']}]"
+                    )
+                )
+
+                for p in perfis
+            ]
+
+            page.update()
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "LOAD PERFIS ERROR"
+            )
+
+            snackbar(
+                page,
+                str(ex),
+                erro=True
+            )
+
+    # ==============================================
+    # CARD
+    # ==============================================
+
+    def criar_card(usuario):
+
+        level = int(
+            usuario.get(
                 "admin_level",
                 0
             )
-        ) >= usuario_level:
-
-            return False
-
-        return True
-
-    # ==============================================
-    # EDITAR
-    # ==============================================
-
-    def editar(u):
-
-        if not pode_editar:
-
-            exibir_snackbar(
-
-                page,
-
-                "Sem permissão.",
-
-                erro=True
-            )
-
-            return
-
-        usuario_editando["id"] = u["id"]
-
-        txt_login.value = str(
-            u["login"]
-        ).strip()
-
-        txt_nome.value = str(
-            u["nome"]
-        ).strip()
-
-        chk_ativo.value = bool(
-            u["ativo"]
         )
-
-        chk_bloqueado.value = bool(
-            u["bloqueado"]
-        )
-
-        ddl_perfil.value = str(
-            u["perfil_id"]
-        )
-
-        page.update()
-
-    # ==============================================
-    # SALVAR
-    # ==============================================
-
-    def salvar(e=None):
-
-        nonlocal carregando
-
-        if carregando:
-            return
-
-        carregando = True
-
-        bloquear_ui(True)
-
-        try:
-
-            login = str(
-
-                txt_login.value or ""
-
-            ).strip().upper()
-
-            nome = str(
-
-                txt_nome.value or ""
-
-            ).strip()
-
-            if not login:
-
-                raise Exception(
-                    "Informe login."
-                )
-
-            if not nome:
-
-                raise Exception(
-                    "Informe nome."
-                )
-
-            if not ddl_perfil.value:
-
-                raise Exception(
-                    "Selecione perfil."
-                )
-
-            perfil_id = int(
-                ddl_perfil.value
-            )
-
-            ativo = int(
-                bool(
-                    chk_ativo.value
-                )
-            )
-
-            bloqueado = int(
-                bool(
-                    chk_bloqueado.value
-                )
-            )
-
-            # ======================================
-            # NOVO
-            # ======================================
-
-            if not usuario_editando["id"]:
-
-                resultado = criar_usuario(
-
-                    usuario,
-
-                    login,
-
-                    nome,
-
-                    perfil_id
-                )
-
-            # ======================================
-            # UPDATE
-            # ======================================
-
-            else:
-
-                resultado = atualizar_usuario(
-
-                    usuario,
-
-                    usuario_editando["id"],
-
-                    login,
-
-                    nome,
-
-                    perfil_id,
-
-                    ativo,
-
-                    bloqueado
-                )
-
-            if not resultado["sucesso"]:
-
-                raise Exception(
-                    resultado["mensagem"]
-                )
-
-            limpar()
-
-            carregar()
-
-            exibir_snackbar(
-
-                page,
-
-                resultado["mensagem"]
-            )
-
-        except Exception as ex:
-
-            logging.exception(
-                "USUARIO SAVE ERROR"
-            )
-
-            status(str(ex))
-
-        finally:
-
-            carregando = False
-
-            bloquear_ui(False)
-
-    btn_salvar.on_click = salvar
-
-    # ==============================================
-    # REMOVER
-    # ==============================================
-
-    def remover(u):
-
-        try:
-
-            resultado = excluir_usuario(
-
-                usuario,
-
-                u["id"]
-            )
-
-            if not resultado["sucesso"]:
-
-                raise Exception(
-                    resultado["mensagem"]
-                )
-
-            carregar()
-
-            exibir_snackbar(
-
-                page,
-
-                resultado["mensagem"]
-            )
-
-        except Exception as ex:
-
-            logging.exception(
-                "USER DELETE ERROR"
-            )
-
-            exibir_snackbar(
-
-                page,
-
-                str(ex),
-
-                erro=True
-            )
-
-    # ==============================================
-    # RESET
-    # ==============================================
-
-    def resetar(u):
-
-        try:
-
-            resultado = resetar_senha(
-
-                usuario,
-
-                u["id"]
-            )
-
-            if not resultado["sucesso"]:
-
-                raise Exception(
-                    resultado["mensagem"]
-                )
-
-            exibir_snackbar(
-
-                page,
-
-                resultado["mensagem"]
-            )
-
-        except Exception as ex:
-
-            logging.exception(
-                "RESET PASSWORD ERROR"
-            )
-
-            exibir_snackbar(
-
-                page,
-
-                str(ex),
-
-                erro=True
-            )
-
-    # ==============================================
-    # GRID
-    # ==============================================
-
-    def render_usuario(u):
-
-        cor = None
-
-        if u.get("sistema"):
-
-            cor = ft.Colors.RED_50
-
-        elif u["bloqueado"]:
-
-            cor = ft.Colors.ORANGE_50
-
-        elif not u["ativo"]:
-
-            cor = ft.Colors.GREY_200
-
-        controles = []
-
-        # ==========================================
-        # EDITAR
-        # ==========================================
-
-        if pode_editar:
-
-            controles.append(
-
-                ft.IconButton(
-
-                    icon=ft.Icons.EDIT,
-
-                    tooltip="Editar",
-
-                    on_click=lambda e,
-                    x=u: editar(x)
-                )
-            )
-
-            controles.append(
-
-                ft.IconButton(
-
-                    icon=ft.Icons.LOCK_RESET,
-
-                    tooltip="Resetar Senha",
-
-                    on_click=lambda e,
-                    x=u: resetar(x)
-                )
-            )
-
-        # ==========================================
-        # EXCLUIR
-        # ==========================================
-
-        if (
-            pode_excluir
-
-            and
-
-            u["id"] != usuario["id"]
-        ):
-
-            controles.append(
-
-                ft.IconButton(
-
-                    icon=ft.Icons.DELETE,
-
-                    tooltip="Desativar",
-
-                    on_click=lambda e,
-                    x=u: remover(x)
-                )
-            )
 
         return ft.Container(
 
-            content=ft.Row([
+            padding=12,
 
-                ft.Text(
+            border_radius=12,
 
-                    u["login"],
-
-                    width=140,
-
-                    weight=(
-
-                        "bold"
-
-                        if u.get("sistema")
-
-                        else None
-                    )
-                ),
-
-                ft.Text(
-
-                    u["nome"],
-
-                    width=220
-                ),
-
-                ft.Text(
-
-                    (
-                        f"{u['perfil_nome']} "
-                        f"(L{u.get('admin_level',0)})"
-                    ),
-
-                    width=220
-                ),
-
-                ft.Text(
-
-                    "Ativo"
-
-                    if u["ativo"]
-
-                    else "Inativo",
-
-                    width=80
-                ),
-
-                ft.Text(
-
-                    "Bloqueado"
-
-                    if u["bloqueado"]
-
-                    else "",
-
-                    width=100,
-
-                    color=ft.Colors.RED
-                ),
-
-                *controles
-
-            ],
-
-                wrap=True
-            ),
-
-            padding=10,
+            bgcolor=ft.Colors.WHITE,
 
             border=ft.border.all(
 
@@ -868,196 +382,632 @@ def usuarios_view(page):
                 ft.Colors.GREY_300
             ),
 
-            border_radius=8,
+            content=ft.Row([
 
-            bgcolor=cor
+                # ==================================
+                # INFO
+                # ==================================
+
+                ft.Container(
+
+                    expand=True,
+
+                    content=ft.Column([
+
+                        ft.Row([
+
+                            ft.Icon(
+
+                                ft.Icons.PERSON,
+
+                                color=get_cor_admin(
+                                    level
+                                )
+                            ),
+
+                            ft.Text(
+
+                                usuario["nome"],
+
+                                size=16,
+
+                                weight="bold"
+                            ),
+
+                            ft.Container(
+
+                                padding=ft.padding.symmetric(
+
+                                    horizontal=8,
+
+                                    vertical=2
+                                ),
+
+                                bgcolor=get_cor_admin(
+                                    level
+                                ),
+
+                                border_radius=20,
+
+                                content=ft.Text(
+
+                                    get_nome_admin(
+                                        level
+                                    ),
+
+                                    color=ft.Colors.WHITE,
+
+                                    size=11
+                                )
+                            )
+
+                        ],
+                            spacing=10
+                        ),
+
+                        ft.Text(
+
+                            (
+                                f"Login: "
+                                f"{usuario['login']} | "
+                                f"Perfil: "
+                                f"{usuario['perfil_nome']}"
+                            ),
+
+                            size=11,
+
+                            color=ft.Colors.GREY_700
+                        ),
+
+                        ft.Row([
+
+                            ft.Icon(
+
+                                (
+                                    ft.Icons.CHECK_CIRCLE
+                                    if usuario["ativo"]
+                                    else
+                                    ft.Icons.CANCEL
+                                ),
+
+                                color=(
+
+                                    ft.Colors.GREEN
+
+                                    if usuario["ativo"]
+
+                                    else
+
+                                    ft.Colors.RED
+                                ),
+
+                                size=16
+                            ),
+
+                            ft.Text(
+
+                                (
+                                    "Ativo"
+                                    if usuario["ativo"]
+                                    else
+                                    "Inativo"
+                                ),
+
+                                size=12
+                            ),
+
+                            ft.Container(width=20),
+
+                            ft.Icon(
+
+                                (
+                                    ft.Icons.LOCK_RESET
+                                    if usuario.get(
+                                        "deve_trocar"
+                                    )
+                                    else
+                                    ft.Icons.LOCK_OPEN
+                                ),
+
+                                color=ft.Colors.ORANGE,
+
+                                size=16
+                            ),
+
+                            ft.Text(
+
+                                (
+                                    "Troca obrigatória"
+                                    if usuario.get(
+                                        "deve_trocar"
+                                    )
+                                    else
+                                    "Senha válida"
+                                ),
+
+                                size=12
+                            )
+
+                        ],
+                            spacing=6
+                        )
+
+                    ],
+                        spacing=6
+                    )
+                ),
+
+                # ==================================
+                # AÇÕES
+                # ==================================
+
+                ft.Row([
+
+                    ft.IconButton(
+
+                        icon=ft.Icons.EDIT,
+
+                        disabled=(
+                            not pode_editar
+                        ),
+
+                        on_click=lambda e,
+                        u=usuario: editar(u)
+                    ),
+
+                    ft.IconButton(
+
+                        icon=ft.Icons.LOCK_RESET,
+
+                        tooltip="Resetar senha",
+
+                        disabled=(
+                            not pode_editar
+                        ),
+
+                        on_click=lambda e,
+                        u=usuario: resetar(u)
+                    ),
+
+                    ft.IconButton(
+
+                        icon=ft.Icons.DELETE,
+
+                        icon_color=ft.Colors.RED,
+
+                        disabled=(
+                            not pode_editar
+                        ),
+
+                        on_click=lambda e,
+                        u=usuario: remover(u)
+                    )
+
+                ])
+            ])
         )
 
     # ==============================================
-    # CARREGAR
+    # LOAD
     # ==============================================
 
-    def carregar():
+    def carregar_usuarios(e=None):
 
-        lista.controls.clear()
+        try:
 
-        resultado = listar_usuarios(
-            usuario
-        )
+            filtro = str(
+                txt_filtro.value or ""
+            ).strip()
 
-        if not resultado["sucesso"]:
+            tabela.controls.clear()
 
-            status(
-                resultado["mensagem"]
+            usuarios = listar_usuarios(
+                filtro
             )
 
-            return
+            for usuario in usuarios:
 
-        usuarios_cache.clear()
+                tabela.controls.append(
+                    criar_card(usuario)
+                )
 
-        usuarios_cache.extend(
-            resultado["dados"]
+            page.update()
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "LOAD USERS ERROR"
+            )
+
+            snackbar(
+                page,
+                str(ex),
+                erro=True
+            )
+
+    # ==============================================
+    # EDIT
+    # ==============================================
+
+    def editar(usuario):
+
+        txt_id.value = usuario["id"]
+
+        txt_login.value = usuario["login"]
+
+        txt_nome.value = usuario["nome"]
+
+        txt_email.value = (
+            usuario.get("email")
+            or ""
         )
 
-        filtro = str(
+        ddl_perfil.value = str(
+            usuario["perfil_id"]
+        )
 
-            txt_filtro.value or ""
+        chk_ativo.value = bool(
+            usuario["ativo"]
+        )
 
-        ).strip().upper()
-
-        usuarios_filtrados = []
-
-        for u in usuarios_cache:
-
-            if not pode_visualizar_usuario(u):
-                continue
-
-            texto = (
-                f"{u['login']} "
-                f"{u['nome']} "
-                f"{u['perfil_nome']}"
-            ).upper()
-
-            if filtro:
-
-                if filtro not in texto:
-                    continue
-
-            usuarios_filtrados.append(u)
-
-        for u in usuarios_filtrados:
-
-            lista.controls.append(
-                render_usuario(u)
+        chk_trocar.value = bool(
+            usuario.get(
+                "deve_trocar"
             )
+        )
+
+        txt_senha.value = ""
 
         page.update()
 
+    # ==============================================
+    # REMOVE
+    # ==============================================
+
+    def remover(usuario):
+
+        try:
+
+            excluir_usuario(
+
+                usuario["id"],
+
+                usuario_logado
+            )
+
+            carregar_usuarios()
+
+            snackbar(
+                page,
+                "Usuário removido."
+            )
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "DELETE USER ERROR"
+            )
+
+            snackbar(
+                page,
+                str(ex),
+                erro=True
+            )
+
+    # ==============================================
+    # RESET
+    # ==============================================
+
+    def resetar(usuario):
+
+        try:
+
+            resetar_senha_usuario(
+
+                usuario["id"],
+
+                usuario_logado
+            )
+
+            snackbar(
+                page,
+                (
+                    "Senha resetada "
+                    "com sucesso."
+                )
+            )
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "RESET PASSWORD ERROR"
+            )
+
+            snackbar(
+                page,
+                str(ex),
+                erro=True
+            )
+
+    # ==============================================
+    # SAVE
+    # ==============================================
+
+    def salvar(e):
+
+        try:
+
+            if not pode_editar:
+
+                snackbar(
+                    page,
+                    "Sem permissão.",
+                    erro=True
+                )
+
+                return
+
+            payload = {
+
+                "login": txt_login.value,
+
+                "nome": txt_nome.value,
+
+                "email": txt_email.value,
+
+                "senha": txt_senha.value,
+
+                "perfil_id": ddl_perfil.value,
+
+                "ativo": chk_ativo.value,
+
+                "deve_trocar": (
+                    chk_trocar.value
+                )
+            }
+
+            # ======================================
+            # CREATE
+            # ======================================
+
+            if not txt_id.value:
+
+                criar_usuario(
+
+                    payload,
+
+                    usuario_logado
+                )
+
+                snackbar(
+                    page,
+                    "Usuário criado."
+                )
+
+            # ======================================
+            # UPDATE
+            # ======================================
+
+            else:
+
+                atualizar_usuario(
+
+                    int(txt_id.value),
+
+                    payload,
+
+                    usuario_logado
+                )
+
+                snackbar(
+                    page,
+                    "Usuário atualizado."
+                )
+
+            limpar()
+
+            carregar_usuarios()
+
+        except Exception as ex:
+
+            LOGGER.exception(
+                "SAVE USER ERROR"
+            )
+
+            snackbar(
+                page,
+                str(ex),
+                erro=True
+            )
+
+    # ==============================================
+    # EVENTOS
+    # ==============================================
+
     txt_filtro.on_change = (
-        lambda e: carregar()
+        carregar_usuarios
+    )
+
+    # ==============================================
+    # BOTÕES
+    # ==============================================
+
+    btn_novo = ft.OutlinedButton(
+
+        "Novo",
+
+        icon=ft.Icons.ADD,
+
+        disabled=not pode_editar,
+
+        on_click=lambda e: (
+            limpar(),
+            page.update()
+        )
+    )
+
+    btn_salvar = ft.ElevatedButton(
+
+        "Salvar",
+
+        icon=ft.Icons.SAVE,
+
+        disabled=not pode_editar,
+
+        on_click=salvar
+    )
+
+    btn_voltar = ft.TextButton(
+
+        "Voltar",
+
+        icon=ft.Icons.ARROW_BACK,
+
+        on_click=lambda e: navegar(
+            page,
+            "dashboard"
+        )
     )
 
     # ==============================================
     # INIT
     # ==============================================
 
-    carregar()
+    limpar()
+
+    carregar_perfis()
+
+    carregar_usuarios()
 
     # ==============================================
     # LAYOUT
     # ==============================================
 
-    return ft.Column([
-
-        ft.Row([
-
-            ft.Text(
-
-                "Usuários",
-
-                size=28,
-
-                weight="bold"
-            ),
-
-            progress
-
-        ],
-
-            alignment=(
-                ft.MainAxisAlignment.SPACE_BETWEEN
-            )
-        ),
-
-        ft.Divider(),
-
-        txt_filtro,
-
-        ft.Row([
-
-            txt_login,
-
-            txt_nome,
-
-            ddl_perfil
-
-        ],
-
-            wrap=True
-        ),
-
-        ft.Row([
-
-            chk_ativo,
-
-            chk_bloqueado
-
-        ]),
-
-        txt_status,
-
-        ft.Row([
-
-            btn_salvar,
-
-            btn_limpar,
-
-            btn_voltar
-
-        ],
-
-            wrap=True
-        ),
-
-        ft.Divider(),
-
-        ft.Container(
-
-            content=ft.Row([
-
-                ft.Text(
-                    "Login",
-                    width=140,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Nome",
-                    width=220,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Perfil",
-                    width=220,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Status",
-                    width=80,
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    "Bloqueio",
-                    width=100,
-                    weight="bold"
-                )
-
-            ],
-
-                wrap=True
-            ),
-
-            padding=10
-        ),
-
-        lista
-
-    ],
+    return ft.Container(
 
         expand=True,
 
-        scroll=ft.ScrollMode.AUTO
+        padding=20,
+
+        content=ft.Column([
+
+            # ======================================
+            # HEADER
+            # ======================================
+
+            ft.Row([
+
+                ft.Column([
+
+                    ft.Text(
+
+                        "Usuários",
+
+                        size=30,
+
+                        weight="bold"
+                    ),
+
+                    ft.Text(
+
+                        APP_CONFIG["name"],
+
+                        size=13,
+
+                        color=ft.Colors.GREY_700
+                    )
+
+                ],
+                    spacing=2,
+                    expand=True
+                ),
+
+                btn_voltar
+            ]),
+
+            ft.Divider(),
+
+            # ======================================
+            # FORM
+            # ======================================
+
+            ft.Row([
+
+                txt_login,
+
+                txt_nome,
+
+                txt_email
+
+            ],
+
+                wrap=True,
+
+                spacing=12
+            ),
+
+            ft.Row([
+
+                txt_senha,
+
+                ddl_perfil
+
+            ],
+
+                wrap=True,
+
+                spacing=12
+            ),
+
+            ft.Row([
+
+                chk_ativo,
+
+                chk_trocar
+
+            ]),
+
+            ft.Row([
+
+                btn_novo,
+
+                btn_salvar
+
+            ]),
+
+            ft.Divider(),
+
+            # ======================================
+            # FILTRO
+            # ======================================
+
+            ft.Row([
+
+                txt_filtro
+
+            ]),
+
+            # ======================================
+            # LISTA
+            # ======================================
+
+            ft.Container(
+
+                expand=True,
+
+                padding=12,
+
+                bgcolor=ft.Colors.GREY_100,
+
+                border_radius=12,
+
+                content=tabela
+            )
+
+        ],
+
+            spacing=16,
+
+            expand=True
+        )
     )

@@ -1,65 +1,144 @@
+# services/menu_service.py
 
 import logging
 
-from database.connection import get_connection
+from database.connection import (
+    get_connection
+)
+
+from core.menu_constants import (
+
+    ADMIN_LEVEL_ROOT,
+
+    tipo_existe
+)
 
 
 # ==================================================
-# CONSTANTES
+# LOGGER
 # ==================================================
 
-ROOT_LEVEL = 100
-
-TIPOS_VALIDOS = {
-    "T",
-    "S",
-    "M"
-}
+LOGGER = logging.getLogger(
+    "MDM_MENU_SERVICE"
+)
 
 
 # ==================================================
-# NORMALIZAR MENU
+# HELPERS
 # ==================================================
 
-def normalizar_menu(menu):
+def normalizar_usuario(usuario):
+
+    if not usuario:
+
+        return {}
+
+    return {
+
+        "id": (
+            usuario.get("id")
+            or
+            usuario.get("Id")
+        ),
+
+        "login": (
+            usuario.get("login")
+            or
+            usuario.get("Login")
+        ),
+
+        "perfil_id": (
+            usuario.get("perfil_id")
+            or
+            usuario.get("PerfilId")
+        ),
+
+        "admin_level": int(
+
+            usuario.get("admin_level")
+
+            or
+
+            usuario.get("AdminLevel")
+
+            or 0
+        )
+    }
+
+
+def get_admin_level(usuario):
+
+    usuario = normalizar_usuario(
+        usuario
+    )
+
+    return int(
+        usuario.get(
+            "admin_level",
+            0
+        )
+    )
+
+
+def is_root(usuario):
+
+    return (
+        get_admin_level(usuario)
+        >=
+        ADMIN_LEVEL_ROOT
+    )
+
+
+# ==================================================
+# MAP MENU
+# ==================================================
+
+def map_menu(row):
 
     tipo = str(
-        menu.get("tipo") or "M"
+        row[5] or "M"
     ).strip().upper()
 
-    if tipo not in TIPOS_VALIDOS:
+    if not tipo_existe(tipo):
+
+        LOGGER.warning(
+            (
+                f"TipoMenu inválido: "
+                f"{tipo}"
+            )
+        )
+
         tipo = "M"
 
     return {
 
-        "id": menu.get("id"),
+        "id": row[0],
 
         "nome": str(
-            menu.get("nome") or "Menu"
+            row[1] or ""
         ).strip(),
 
         "rota": (
-            str(menu.get("rota")).strip()
-            if menu.get("rota")
+            str(row[2]).strip().lower()
+            if row[2]
             else None
         ),
 
-        "pai": menu.get("pai"),
-
-        "ordem": (
-            menu.get("ordem")
-            if menu.get("ordem") is not None
-            else 9999
+        "ordem": int(
+            row[3] or 0
         ),
+
+        "menu_pai": row[4],
 
         "tipo": tipo,
 
-        "sistema": bool(
-            menu.get("sistema", 0)
+        "icone": (
+            str(row[6] or "")
+            .strip()
         ),
 
         "admin_level": int(
-            menu.get("admin_level", 0)
+            row[7] or 0
         ),
 
         "filhos": []
@@ -67,259 +146,165 @@ def normalizar_menu(menu):
 
 
 # ==================================================
-# ORDENAÇÃO
+# SORT MENUS
 # ==================================================
 
-def ordenar_arvore(menu):
+def sort_menus(menus):
 
-    filhos = menu.get("filhos", [])
+    return sorted(
 
-    filhos.sort(
+        menus,
+
         key=lambda x: (
-            x.get("ordem", 9999),
-            x.get("nome", "")
-        )
-    )
 
-    for filho in filhos:
-        ordenar_arvore(filho)
-
-
-# ==================================================
-# SEGURANÇA MENU
-# ==================================================
-
-def pode_acessar_menu(usuario, menu):
-
-    if not usuario:
-        return False
-
-    admin_level = int(
-        usuario.get("admin_level", 0)
-    )
-
-    # ==============================================
-    # ROOT
-    # ==============================================
-
-    if admin_level >= ROOT_LEVEL:
-        return True
-
-    # ==============================================
-    # MENU SISTEMA
-    # ==============================================
-
-    if bool(menu.get("sistema", 0)):
-        return False
-
-    # ==============================================
-    # NÍVEL
-    # ==============================================
-
-    if admin_level < int(
-        menu.get("admin_level", 0)
-    ):
-        return False
-
-    return True
-
-
-# ==================================================
-# BUSCAR PAIS
-# ==================================================
-
-def buscar_pais(cursor, menus):
-
-    ids_existentes = {
-        m["id"]
-        for m in menus
-    }
-
-    while True:
-
-        pais_faltando = {
-
-            m["pai"]
-
-            for m in menus
-
-            if (
-                m.get("pai")
-                and
-                m["pai"] not in ids_existentes
-            )
-        }
-
-        if not pais_faltando:
-            break
-
-        placeholders = ",".join(
-            "?"
-            for _ in pais_faltando
-        )
-
-        sql = f"""
-
-            SELECT
-                Id,
-                Nome,
-                Rota,
-                MenuPaiId,
-                Ordem,
-                TipoMenu,
-                Sistema,
-                AdminLevel
-
-            FROM Menu
-
-            WHERE
-                Ativo = 1
-                AND Id IN ({placeholders})
-
-        """
-
-        cursor.execute(
-            sql,
-            tuple(pais_faltando)
-        )
-
-        rows = cursor.fetchall()
-
-        if not rows:
-            break
-
-        for r in rows:
-
-            item = normalizar_menu({
-
-                "id": r[0],
-                "nome": r[1],
-                "rota": r[2],
-                "pai": r[3],
-                "ordem": r[4],
-                "tipo": r[5],
-                "sistema": r[6],
-                "admin_level": r[7]
-            })
-
-            if item["id"] not in ids_existentes:
-
-                menus.append(item)
-
-                ids_existentes.add(
-                    item["id"]
+            int(
+                x.get(
+                    "ordem",
+                    0
                 )
+            ),
 
-    return menus
+            str(
+                x.get(
+                    "nome",
+                    ""
+                )
+            ).upper()
+        )
+    )
 
 
 # ==================================================
-# HIERARQUIA
+# BUILD TREE
 # ==================================================
 
-def montar_hierarquia(menus):
+def build_tree(menus):
 
-    lookup = {}
+    LOGGER.info(
+        (
+            f"Montando árvore: "
+            f"{len(menus)} menus"
+        )
+    )
+
+    mapa = {}
 
     raiz = []
 
-    for m in menus:
+    # ==============================================
+    # INDEX
+    # ==============================================
 
-        item = normalizar_menu(m)
+    for menu in menus:
 
-        lookup[item["id"]] = item
+        menu["filhos"] = []
 
-    for item in lookup.values():
+        mapa[
+            menu["id"]
+        ] = menu
 
-        pai = item.get("pai")
+    # ==============================================
+    # VINCULAÇÃO
+    # ==============================================
 
-        if pai and pai in lookup:
+    for menu in menus:
 
-            lookup[pai]["filhos"].append(
-                item
+        pai = menu.get(
+            "menu_pai"
+        )
+
+        # ==========================================
+        # RAIZ
+        # ==========================================
+
+        if pai is None:
+
+            raiz.append(menu)
+
+            LOGGER.info(
+                (
+                    f"RAIZ: "
+                    f"{menu['nome']} "
+                    f"[{menu['tipo']}]"
+                )
             )
 
-        else:
+            continue
 
-            raiz.append(item)
+        # ==========================================
+        # PAI NÃO ENCONTRADO
+        # ==========================================
 
-    for r in raiz:
-        ordenar_arvore(r)
+        if pai not in mapa:
 
-    raiz.sort(
-        key=lambda x: (
-            x.get("ordem", 9999),
-            x.get("nome", "")
+            LOGGER.warning(
+                (
+                    f"Pai não encontrado | "
+                    f"menu={menu['nome']} "
+                    f"pai={pai}"
+                )
+            )
+
+            raiz.append(menu)
+
+            continue
+
+        # ==========================================
+        # FILHO
+        # ==========================================
+
+        mapa[pai][
+            "filhos"
+        ].append(menu)
+
+        LOGGER.info(
+            (
+                f"Vinculado: "
+                f"{menu['nome']} -> "
+                f"{mapa[pai]['nome']}"
+            )
+        )
+
+    # ==============================================
+    # SORT RECURSIVO
+    # ==============================================
+
+    def ordenar(items):
+
+        items = sort_menus(items)
+
+        for item in items:
+
+            filhos = item.get(
+                "filhos",
+                []
+            )
+
+            if filhos:
+
+                item["filhos"] = ordenar(
+                    filhos
+                )
+
+        return items
+
+    arvore = ordenar(raiz)
+
+    LOGGER.info(
+        (
+            f"Árvore final: "
+            f"{len(arvore)} raízes"
         )
     )
 
-    return raiz
+    return arvore
 
 
 # ==================================================
-# LOG ÁRVORE
+# SQL BASE
 # ==================================================
 
-def log_arvore(menus, nivel=0):
-
-    for m in menus:
-
-        logging.info(
-            "%sMENU id=%s nome=%s tipo=%s pai=%s sistema=%s level=%s",
-            "  " * nivel,
-            m.get("id"),
-            m.get("nome"),
-            m.get("tipo"),
-            m.get("pai"),
-            m.get("sistema"),
-            m.get("admin_level")
-        )
-
-        filhos = m.get("filhos", [])
-
-        if filhos:
-
-            log_arvore(
-                filhos,
-                nivel + 1
-            )
-
-
-# ==================================================
-# QUERY ROOT
-# ==================================================
-
-def query_root():
-
-    return """
-
-        SELECT
-            Id,
-            Nome,
-            Rota,
-            MenuPaiId,
-            Ordem,
-            TipoMenu,
-            Sistema,
-            AdminLevel
-
-        FROM Menu
-
-        WHERE
-            Ativo = 1
-
-        ORDER BY
-            Ordem,
-            Nome
-
-    """
-
-
-# ==================================================
-# QUERY PERFIL
-# ==================================================
-
-def query_perfil():
+def get_sql_root():
 
     return """
 
@@ -327,23 +312,52 @@ def query_perfil():
             m.Id,
             m.Nome,
             m.Rota,
-            m.MenuPaiId,
             m.Ordem,
+            m.MenuPaiId,
             m.TipoMenu,
-            m.Sistema,
+            ISNULL(m.Icone, ''),
             m.AdminLevel
 
         FROM Menu m
 
-        INNER JOIN PerfilMenu pm
-            ON pm.MenuId = m.Id
-
         WHERE
             m.Ativo = 1
-            AND pm.PerfilId = ?
-            AND pm.PodeVer = 1
 
         ORDER BY
+            ISNULL(m.MenuPaiId, 0),
+            m.Ordem,
+            m.Nome
+
+    """
+
+
+def get_sql_perfil():
+
+    return """
+
+        SELECT
+            m.Id,
+            m.Nome,
+            m.Rota,
+            m.Ordem,
+            m.MenuPaiId,
+            m.TipoMenu,
+            ISNULL(m.Icone, ''),
+            m.AdminLevel
+
+        FROM PerfilMenu pm
+
+        INNER JOIN Menu m
+            ON m.Id = pm.MenuId
+
+        WHERE
+            pm.PerfilId = ?
+            AND pm.PodeVer = 1
+            AND m.Ativo = 1
+            AND m.AdminLevel <= ?
+
+        ORDER BY
+            ISNULL(m.MenuPaiId, 0),
             m.Ordem,
             m.Nome
 
@@ -351,117 +365,123 @@ def query_perfil():
 
 
 # ==================================================
-# MENU USUÁRIO
+# LISTAR MENUS
 # ==================================================
 
-def get_menu_usuario(usuario):
-
-    if not usuario:
-
-        logging.warning(
-            "Usuário inválido."
-        )
-
-        return []
-
-    admin_level = int(
-        usuario.get("admin_level", 0)
-    )
-
-    perfil_id = usuario.get(
-        "perfil_id"
-    )
-
-    logging.info(
-        "Montando menu perfil=%s",
-        perfil_id
-    )
+def listar_menus_usuario(usuario):
 
     conn = None
 
     try:
+
+        usuario = normalizar_usuario(
+            usuario
+        )
+
+        LOGGER.info(
+            (
+                f"Usuário normalizado: "
+                f"{usuario}"
+            )
+        )
+
+        perfil_id = usuario.get(
+            "perfil_id"
+        )
+
+        admin_level = get_admin_level(
+            usuario
+        )
+
+        LOGGER.info(
+            (
+                f"Carregando menus | "
+                f"perfil={perfil_id} | "
+                f"admin_level={admin_level}"
+            )
+        )
+
+        if not perfil_id:
+
+            LOGGER.warning(
+                "Usuário sem perfil."
+            )
+
+            return []
 
         conn = get_connection()
 
         cursor = conn.cursor()
 
         # ==========================================
-        # ROOT BYPASS
+        # ROOT
         # ==========================================
 
-        if admin_level >= ROOT_LEVEL:
+        if is_root(usuario):
 
-            logging.info(
-                "ROOT BYPASS ATIVADO"
+            LOGGER.info(
+                "Carregamento ROOT"
             )
 
             cursor.execute(
-                query_root()
+                get_sql_root()
             )
 
         # ==========================================
-        # PERFIL NORMAL
+        # PERFIL
         # ==========================================
 
         else:
 
+            LOGGER.info(
+                "Carregamento PerfilMenu"
+            )
+
             cursor.execute(
-                query_perfil(),
-                (perfil_id,)
+
+                get_sql_perfil(),
+
+                (
+                    perfil_id,
+                    admin_level
+                )
             )
 
         rows = cursor.fetchall()
 
-        logging.info(
-            "ROWS=%s",
-            len(rows)
+        LOGGER.info(
+            (
+                f"Menus SQL: "
+                f"{len(rows)}"
+            )
         )
 
         menus = []
 
-        for r in rows:
+        for row in rows:
 
-            item = normalizar_menu({
+            menu = map_menu(row)
 
-                "id": r[0],
-                "nome": r[1],
-                "rota": r[2],
-                "pai": r[3],
-                "ordem": r[4],
-                "tipo": r[5],
-                "sistema": r[6],
-                "admin_level": r[7]
-            })
+            menus.append(menu)
 
-            if not pode_acessar_menu(
-                usuario,
-                item
-            ):
-                continue
+            LOGGER.info(
+                (
+                    f"MENU: "
+                    f"{menu['id']} | "
+                    f"{menu['nome']} | "
+                    f"tipo={menu['tipo']} | "
+                    f"pai={menu['menu_pai']}"
+                )
+            )
 
-            menus.append(item)
-
-        menus = buscar_pais(
-            cursor,
+        return build_tree(
             menus
         )
-
-        menus = montar_hierarquia(
-            menus
-        )
-
-        logging.info(
-            "ÁRVORE FINAL"
-        )
-
-        log_arvore(menus)
-
-        return menus
 
     except Exception:
 
-        logging.exception(
-            "MENU ERROR"
+        LOGGER.exception(
+            "MENU LOAD ERROR"
         )
 
         return []
@@ -474,4 +494,189 @@ def get_menu_usuario(usuario):
                 conn.close()
 
         except Exception:
+
             pass
+
+
+# ==================================================
+# MENU POR ROTA
+# ==================================================
+
+def get_menu_by_route(
+    usuario,
+    rota
+):
+
+    conn = None
+
+    try:
+
+        usuario = normalizar_usuario(
+            usuario
+        )
+
+        perfil_id = usuario.get(
+            "perfil_id"
+        )
+
+        admin_level = get_admin_level(
+            usuario
+        )
+
+        rota = str(
+            rota or ""
+        ).strip().lower()
+
+        conn = get_connection()
+
+        cursor = conn.cursor()
+
+        # ==========================================
+        # ROOT
+        # ==========================================
+
+        if is_root(usuario):
+
+            cursor.execute(
+                """
+
+                SELECT
+                    Id,
+                    Nome,
+                    Rota,
+                    Ordem,
+                    MenuPaiId,
+                    TipoMenu,
+                    ISNULL(Icone, ''),
+                    AdminLevel
+
+                FROM Menu
+
+                WHERE
+                    LOWER(Rota) = ?
+                    AND Ativo = 1
+
+                """,
+
+                (rota,)
+            )
+
+        # ==========================================
+        # PERFIL
+        # ==========================================
+
+        else:
+
+            cursor.execute(
+                """
+
+                SELECT
+                    m.Id,
+                    m.Nome,
+                    m.Rota,
+                    m.Ordem,
+                    m.MenuPaiId,
+                    m.TipoMenu,
+                    ISNULL(m.Icone, ''),
+                    m.AdminLevel
+
+                FROM PerfilMenu pm
+
+                INNER JOIN Menu m
+                    ON m.Id = pm.MenuId
+
+                WHERE
+                    pm.PerfilId = ?
+                    AND pm.PodeVer = 1
+                    AND LOWER(m.Rota) = ?
+                    AND m.Ativo = 1
+                    AND m.AdminLevel <= ?
+
+                """,
+
+                (
+                    perfil_id,
+                    rota,
+                    admin_level
+                )
+            )
+
+        row = cursor.fetchone()
+
+        if not row:
+
+            LOGGER.warning(
+                (
+                    f"Menu não encontrado "
+                    f"rota={rota}"
+                )
+            )
+
+            return None
+
+        menu = map_menu(row)
+
+        LOGGER.info(
+            (
+                f"Menu localizado: "
+                f"{menu['nome']}"
+            )
+        )
+
+        return menu
+
+    except Exception:
+
+        LOGGER.exception(
+            "MENU ROUTE ERROR"
+        )
+
+        return None
+
+    finally:
+
+        try:
+
+            if conn:
+                conn.close()
+
+        except Exception:
+
+            pass
+
+
+# ==================================================
+# FLATTEN TREE
+# ==================================================
+
+def flatten_menu_tree(menus):
+
+    retorno = []
+
+    def processar(items):
+
+        items = sort_menus(items)
+
+        for item in items:
+
+            retorno.append(item)
+
+            filhos = item.get(
+                "filhos",
+                []
+            )
+
+            if filhos:
+
+                processar(filhos)
+
+    processar(menus)
+
+    LOGGER.info(
+        (
+            f"Flatten tree: "
+            f"{len(retorno)} itens"
+        )
+    )
+
+    return retorno

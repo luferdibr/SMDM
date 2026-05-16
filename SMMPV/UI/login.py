@@ -7,84 +7,66 @@ from services.auth_service import (
     autenticar
 )
 
+from services.auditoria_service import (
+    registrar_evento
+)
+
+from config.settings import (
+    APP_CONFIG
+)
+
+# ==================================================
+# LOGGER
+# ==================================================
+
+LOGGER = logging.getLogger(
+    "MDM_LOGIN"
+)
 
 # ==================================================
 # HELPERS
 # ==================================================
 
-def get_usuario(page):
-
-    usuario = getattr(
-        page,
-        "usuario_logado",
-        None
-    )
-
-    if (
-        not usuario
-        or
-        not isinstance(usuario, dict)
-    ):
-        return None
-
-    return usuario
-
-
-def exibir_snackbar(
+def show_message(
     page,
-    mensagem,
-    erro=False
+    message,
+    color=ft.Colors.RED
 ):
 
     page.snack_bar = ft.SnackBar(
 
-        content=ft.Text(
-            mensagem
-        ),
+        content=ft.Text(message),
 
-        bgcolor=(
-            ft.Colors.RED_400
-            if erro
-            else ft.Colors.GREEN_600
-        ),
-
-        open=True
+        bgcolor=color
     )
 
-    page.update()
-
-
-def bloquear_ui(
-    status,
-    progress,
-    btn_entrar,
-    btn_sair,
-    txt_user,
-    txt_pass,
-    page
-):
-
-    progress.visible = status
-
-    btn_entrar.disabled = status
-
-    btn_sair.disabled = status
-
-    txt_user.disabled = status
-
-    txt_pass.disabled = status
+    page.snack_bar.open = True
 
     page.update()
 
 
-def limpar_status(
-    txt_status,
-    page
-):
+def close_app(page):
 
-    txt_status.value = ""
+    LOGGER.info(
+        "Minimizando aplicação"
+    )
 
-    page.update()
+    try:
+
+        # ==========================================
+        # MINIMIZA JANELA
+        # ==========================================
+
+        page.window.minimized = True
+
+        page.update()
+
+    except Exception:
+
+        LOGGER.exception(
+            "MINIMIZE ERROR"
+        )
+
 
 
 # ==================================================
@@ -93,84 +75,9 @@ def limpar_status(
 
 def login_view(page: ft.Page):
 
-    # ==============================================
-    # JÁ LOGADO
-    # ==============================================
-
-    usuario = get_usuario(page)
-
-    if usuario:
-
-        try:
-
-            trocar = bool(
-
-                usuario.get(
-                    "trocar_senha"
-                )
-
-                or
-
-                usuario.get(
-                    "senha_expirada"
-                )
-            )
-
-            # ======================================
-            # TROCAR SENHA
-            # ======================================
-
-            if trocar:
-
-                from ui.alterar_senha import (
-                    alterar_senha_view
-                )
-
-                return alterar_senha_view(
-                    page
-                )
-
-            # ======================================
-            # DASHBOARD
-            # ======================================
-
-            from ui.dashboard import (
-                dashboard_view
-            )
-
-            dashboard_view(page)
-
-            return ft.Container()
-
-        except Exception:
-
-            logging.exception(
-                "LOGIN REDIRECT ERROR"
-            )
-
-    # ==============================================
-    # CONFIG PAGE
-    # ==============================================
-
-    page.title = "SMMPV ERP"
-
-    page.theme_mode = (
-        ft.ThemeMode.LIGHT
+    LOGGER.info(
+        "Inicializando login view"
     )
-
-    page.bgcolor = (
-        ft.Colors.GREY_100
-    )
-
-    page.vertical_alignment = (
-        ft.MainAxisAlignment.CENTER
-    )
-
-    page.horizontal_alignment = (
-        ft.CrossAxisAlignment.CENTER
-    )
-
-    salvando = False
 
     # ==============================================
     # CAMPOS
@@ -180,7 +87,7 @@ def login_view(page: ft.Page):
 
         label="Usuário",
 
-        width=340,
+        width=320,
 
         autofocus=True,
 
@@ -191,152 +98,94 @@ def login_view(page: ft.Page):
 
         label="Senha",
 
-        width=340,
-
         password=True,
 
         can_reveal_password=True,
 
+        width=320,
+
         prefix_icon=ft.Icons.LOCK
-    )
-
-    txt_status = ft.Text(
-
-        "",
-
-        size=14,
-
-        color=ft.Colors.RED
-    )
-
-    progress = ft.ProgressRing(
-
-        visible=False
-    )
-
-    btn_entrar = ft.ElevatedButton(
-
-        "Entrar",
-
-        icon=ft.Icons.LOGIN,
-
-        width=160
-    )
-
-    btn_sair = ft.OutlinedButton(
-
-        "Sair",
-
-        icon=ft.Icons.CLOSE,
-
-        width=160
     )
 
     # ==============================================
     # STATUS
     # ==============================================
 
-    def status(
-        texto,
-        erro=True
-    ):
+    txt_status = ft.Text(
 
-        txt_status.value = texto
+        "",
 
-        txt_status.color = (
+        color=ft.Colors.RED,
 
-            ft.Colors.RED
+        size=13
+    )
 
-            if erro
+    progress = ft.ProgressRing(
 
-            else ft.Colors.GREEN
-        )
+        visible=False,
 
-        page.update()
+        width=22,
+
+        height=22
+    )
 
     # ==============================================
     # LOGIN
     # ==============================================
 
-    def entrar(e=None):
-
-        nonlocal salvando
-
-        if salvando:
-            return
-
-        salvando = True
-
-        bloquear_ui(
-
-            True,
-
-            progress,
-
-            btn_entrar,
-
-            btn_sair,
-
-            txt_user,
-
-            txt_pass,
-
-            page
-        )
-
-        limpar_status(
-            txt_status,
-            page
-        )
+    def realizar_login(e):
 
         try:
 
-            usuario_txt = str(
+            login = (
 
                 txt_user.value or ""
 
             ).strip().upper()
 
-            senha_txt = str(
+            senha = (
 
                 txt_pass.value or ""
 
+            ).strip()
+
+            LOGGER.info(
+                f"Autenticando usuário {login}"
             )
 
             # ======================================
-            # USER
+            # VALIDACOES
             # ======================================
 
-            if not usuario_txt:
+            if not login:
 
-                status(
+                txt_status.value = (
                     "Informe o usuário."
                 )
 
-                txt_user.focus()
+                page.update()
 
                 return
 
-            # ======================================
-            # SENHA
-            # ======================================
+            if not senha:
 
-            if not senha_txt:
-
-                status(
+                txt_status.value = (
                     "Informe a senha."
                 )
 
-                txt_pass.focus()
+                page.update()
 
                 return
 
-            logging.info(
+            # ======================================
+            # STATUS
+            # ======================================
 
-                "Autenticando usuário %s",
+            progress.visible = True
 
-                usuario_txt
-            )
+            txt_status.value = ""
+
+            page.update()
 
             # ======================================
             # AUTH
@@ -344,320 +193,251 @@ def login_view(page: ft.Page):
 
             resultado = autenticar(
 
-                usuario_txt,
+                login,
 
-                senha_txt
+                senha
             )
 
-            if not resultado:
-
-                raise Exception(
-                    "Retorno inválido."
-                )
+            LOGGER.info(
+                f"Resultado auth: {resultado}"
+            )
 
             # ======================================
-            # BLOQUEADO
-            # ======================================
-
-            if resultado.get(
-                "bloqueado"
-            ):
-
-                status(
-                    "Usuário bloqueado."
-                )
-
-                return
-
-            # ======================================
-            # INATIVO
-            # ======================================
-
-            if not resultado.get(
-                "ativo",
-                True
-            ):
-
-                status(
-                    "Usuário inativo."
-                )
-
-                return
-
-            # ======================================
-            # PERFIL
-            # ======================================
-
-            if not resultado.get(
-                "perfil_ativo",
-                True
-            ):
-
-                status(
-                    "Perfil inativo."
-                )
-
-                return
-
-            # ======================================
-            # LOGIN INVÁLIDO
+            # LOGIN INVALIDO
             # ======================================
 
             if not resultado.get(
                 "autenticado"
             ):
 
-                status(
-                    "Usuário ou senha inválidos."
-                )
+                progress.visible = False
 
-                txt_pass.focus()
+                txt_status.value = (
 
-                return
-
-            # ======================================
-            # SESSÃO
-            # ======================================
-
-            page.usuario_logado = (
-                resultado
-            )
-
-            # ======================================
-            # TROCA
-            # ======================================
-
-            trocar = bool(
-
-                resultado.get(
-                    "trocar_senha"
-                )
-
-                or
-
-                resultado.get(
-                    "senha_expirada"
-                )
-            )
-
-            # ======================================
-            # ALTERAR SENHA
-            # ======================================
-
-            if trocar:
-
-                logging.info(
-                    "Abrindo alterar senha..."
-                )
-
-                from ui.alterar_senha import (
-                    alterar_senha_view
-                )
-
-                page.clean()
-
-                page.add(
-                    alterar_senha_view(page)
+                    resultado.get(
+                        "mensagem",
+                        "Usuário ou senha inválidos."
+                    )
                 )
 
                 page.update()
 
+                return
+
             # ======================================
-            # DASHBOARD
+            # USUARIO
             # ======================================
 
-            else:
+            usuario = resultado[
+                "usuario"
+            ]
 
-                logging.info(
-                    "Abrindo dashboard..."
-                )
-
-                from ui.dashboard import (
-                    dashboard_view
-                )
-
-                dashboard_view(page)
-
-            logging.info(
-                "Login concluído."
-            )
-
-            exibir_snackbar(
-
-                page,
-
+            LOGGER.info(
                 (
-                    f"Bem-vindo "
-                    f"{resultado.get('login')}."
+                    f"Usuário autenticado: "
+                    f"{usuario}"
                 )
             )
+
+            # ======================================
+            # CONTEXTO PAGE
+            # ======================================
+
+            page.usuario_logado = usuario
+
+            # ======================================
+            # AUDITORIA
+            # ======================================
+
+            registrar_evento(
+
+                usuario_id=usuario["id"],
+
+                login=usuario["login"],
+
+                acao="LOGIN_UI",
+
+                entidade="LOGIN",
+
+                registro_id=usuario["id"],
+
+                detalhes="Login realizado"
+            )
+
+            # ======================================
+            # LIMPA LOGIN
+            # ======================================
+
+            progress.visible = False
+
+            page.clean()
+
+            page.update()
+
+            LOGGER.info(
+                "Tela login limpa"
+            )
+
+            # ======================================
+            # MAIN LAYOUT
+            # ======================================
+
+            from ui.main_layout import (
+                carregar_main_layout
+            )
+
+            LOGGER.info(
+                "Carregando main layout"
+            )
+
+            carregar_main_layout(
+                page,
+                usuario
+            )
+
+            LOGGER.info(
+                "Main layout carregado"
+            )
+
+            page.update()
 
         except Exception as ex:
 
-            logging.exception(
+            LOGGER.exception(
                 "LOGIN ERROR"
             )
 
-            status(
-                f"Erro no login: {ex}"
-            )
+            progress.visible = False
 
-        finally:
+            txt_status.value = str(ex)
 
-            salvando = False
-
-            bloquear_ui(
-
-                False,
-
-                progress,
-
-                btn_entrar,
-
-                btn_sair,
-
-                txt_user,
-
-                txt_pass,
-
-                page
-            )
+            page.update()
 
     # ==============================================
     # ENTER
     # ==============================================
 
-    txt_user.on_submit = entrar
+    txt_user.on_submit = realizar_login
 
-    txt_pass.on_submit = entrar
-
-    btn_entrar.on_click = entrar
+    txt_pass.on_submit = realizar_login
 
     # ==============================================
-    # SAIR
+    # BUTTONS
     # ==============================================
 
-    def fechar_sistema(e=None):
+    btn_login = ft.ElevatedButton(
 
-        try:
+        "Entrar",
 
-            page.window.visible = False
+        width=320,
 
-            page.update()
+        height=45,
 
-        except Exception:
+        icon=ft.Icons.LOGIN,
 
-            logging.exception(
-                "APP CLOSE ERROR"
-            )
+        on_click=realizar_login
+    )
 
-            exibir_snackbar(
+    btn_exit = ft.OutlinedButton(
 
-                page,
+        "Sair",
 
-                "Erro ao fechar sistema.",
+        width=320,
 
-                erro=True
-            )
+        height=45,
 
-    btn_sair.on_click = fechar_sistema
+        icon=ft.Icons.CLOSE,
+
+        on_click=lambda e: close_app(page)
+    )
 
     # ==============================================
     # CARD
     # ==============================================
 
-    card_login = ft.Container(
+    login_card = ft.Card(
 
-        content=ft.Column([
+        elevation=8,
 
-            ft.Icon(
+        content=ft.Container(
 
-                ft.Icons.ACCOUNT_CIRCLE,
+            width=420,
 
-                size=80,
+            padding=40,
 
-                color=ft.Colors.BLUE
-            ),
+            border_radius=20,
 
-            ft.Text(
+            content=ft.Column(
 
-                "SMMPV ERP",
+                [
 
-                size=34,
+                    ft.Icon(
 
-                weight="bold"
-            ),
+                        ft.Icons.ADMIN_PANEL_SETTINGS,
 
-            ft.Text(
+                        size=72,
 
-                "Sistema de Gestão",
+                        color=ft.Colors.BLUE
+                    ),
 
-                size=16,
+                    ft.Text(
 
-                color=ft.Colors.GREY_700
-            ),
+                        APP_CONFIG["name"],
 
-            ft.Divider(),
+                        size=30,
 
-            txt_user,
+                        weight="bold"
+                    ),
 
-            txt_pass,
+                    ft.Text(
 
-            txt_status,
+                        (
+                            f"Versão "
+                            f"{APP_CONFIG['version']}"
+                        ),
 
-            progress,
+                        size=14,
 
-            ft.Row([
+                        color=ft.Colors.GREY_700
+                    ),
 
-                btn_entrar,
+                    ft.Divider(),
 
-                btn_sair
+                    txt_user,
 
-            ],
+                    txt_pass,
 
-                alignment=(
-                    ft.MainAxisAlignment.CENTER
+                    txt_status,
+
+                    progress,
+
+                    btn_login,
+
+                    btn_exit
+
+                ],
+
+                spacing=18,
+
+                horizontal_alignment=(
+
+                    ft.CrossAxisAlignment.CENTER
                 )
             )
-
-        ],
-
-            spacing=18,
-
-            horizontal_alignment=(
-                ft.CrossAxisAlignment.CENTER
-            )
-        ),
-
-        width=440,
-
-        padding=32,
-
-        border_radius=20,
-
-        bgcolor=ft.Colors.WHITE,
-
-        shadow=ft.BoxShadow(
-
-            blur_radius=20,
-
-            spread_radius=1,
-
-            color=ft.Colors.BLACK12
         )
     )
 
     # ==============================================
-    # LAYOUT
+    # PAGE
     # ==============================================
 
     return ft.Container(
-
-        content=card_login,
 
         expand=True,
 
         alignment=ft.Alignment(0, 0),
 
-        bgcolor=ft.Colors.GREY_100
+        bgcolor=ft.Colors.GREY_100,
+
+        content=login_card
     )

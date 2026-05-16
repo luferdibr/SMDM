@@ -1,42 +1,47 @@
+# services/menu_editor_service.py
 
 import logging
 
-from database.connection import get_connection
+from database.connection import (
+    get_connection
+)
 
-from ui.auditoria_service import registrar_evento
+from services.auditoria_service import (
+    registrar_evento
+)
 
+from core.menu_constants import (
 
-# ==================================================
-# CONFIG
-# ==================================================
+    ADMIN_LEVEL_ROOT,
 
-ROOT_LEVEL = 100
+    tipo_existe,
 
-ADMIN_LEVEL = 50
+    validar_hierarquia,
 
-TIPOS_VALIDOS = {
-    "T",
-    "M",
-    "S"
-}
+    permite_rota,
 
-ROTAS_PROTEGIDAS = {
+    permite_pai,
 
-    "dashboard",
+    get_ordem_default,
 
-    "alterar_senha",
+    is_leaf_tipo,
 
-    "usuarios",
-
-    "perfis",
-
-    "menu_config"
-}
+    is_root_tipo
+)
 
 
-# ==================================================
+# =========================================================
+# LOGGER
+# =========================================================
+
+LOGGER = logging.getLogger(
+    "MDM_MENU_EDITOR_SERVICE"
+)
+
+
+# =========================================================
 # HELPERS
-# ==================================================
+# =========================================================
 
 def ok(
     mensagem="OK",
@@ -68,16 +73,23 @@ def erro(mensagem):
 def is_root(usuario):
 
     return (
+
         usuario
+
         and
+
         int(
             usuario.get(
                 "admin_level",
                 0
             )
-        ) >= ROOT_LEVEL
+        ) >= ADMIN_LEVEL_ROOT
     )
 
+
+# =========================================================
+# NORMALIZAR
+# =========================================================
 
 def normalizar_menu(row):
 
@@ -90,8 +102,11 @@ def normalizar_menu(row):
         ).strip(),
 
         "rota": (
+
             str(row[2]).strip().lower()
+
             if row[2]
+
             else None
         ),
 
@@ -103,9 +118,14 @@ def normalizar_menu(row):
 
         "ativo": bool(row[5]),
 
-        "tipo": str(
-            row[6] or "M"
-        ).strip().upper(),
+        "tipo": (
+
+            str(row[6]).strip().upper()
+
+            if row[6]
+
+            else None
+        ),
 
         "sistema": bool(row[7]),
 
@@ -115,9 +135,9 @@ def normalizar_menu(row):
     }
 
 
-# ==================================================
+# =========================================================
 # LISTAR
-# ==================================================
+# =========================================================
 
 def listar_menus():
 
@@ -153,20 +173,28 @@ def listar_menus():
 
         rows = cursor.fetchall()
 
-        dados = [
+        retorno = [
 
             normalizar_menu(r)
+
             for r in rows
         ]
 
+        LOGGER.info(
+            (
+                f"LIST_MENU "
+                f"{len(retorno)}"
+            )
+        )
+
         return ok(
-            dados=dados
+            dados=retorno
         )
 
     except Exception as ex:
 
-        logging.exception(
-            "MENU LIST ERROR"
+        LOGGER.exception(
+            "LIST_MENU_ERROR"
         )
 
         return erro(ex)
@@ -177,13 +205,15 @@ def listar_menus():
 
             if conn:
                 conn.close()
-        except:
+
+        except Exception:
+
             pass
 
 
-# ==================================================
-# OBTER
-# ==================================================
+# =========================================================
+# GET
+# =========================================================
 
 def obter_menu(menu_id):
 
@@ -212,7 +242,9 @@ def obter_menu(menu_id):
 
             WHERE Id = ?
 
-        """, (menu_id,))
+        """, (
+            menu_id,
+        ))
 
         row = cursor.fetchone()
 
@@ -228,8 +260,8 @@ def obter_menu(menu_id):
 
     except Exception as ex:
 
-        logging.exception(
-            "MENU GET ERROR"
+        LOGGER.exception(
+            "GET_MENU_ERROR"
         )
 
         return erro(ex)
@@ -237,19 +269,25 @@ def obter_menu(menu_id):
     finally:
 
         try:
+
             if conn:
                 conn.close()
-        except:
+
+        except Exception:
+
             pass
 
 
-# ==================================================
+# =========================================================
 # LOOP
-# ==================================================
+# =========================================================
 
 def validar_loop(
+
     menu_id,
+
     pai_id,
+
     lookup
 ):
 
@@ -260,6 +298,13 @@ def validar_loop(
     while atual and contador < 100:
 
         if atual == menu_id:
+
+            LOGGER.warning(
+                (
+                    f"LOOP_DETECTED "
+                    f"{menu_id}"
+                )
+            )
 
             raise Exception(
                 "Loop hierárquico detectado."
@@ -281,21 +326,48 @@ def validar_loop(
         )
 
 
-# ==================================================
-# MENU PAI
-# ==================================================
+# =========================================================
+# HIERARQUIA
+# =========================================================
 
-def validar_pai(
+def validar_hierarquia_menu(
+
     dados,
+
     lookup
 ):
 
-    pai = dados.get("pai")
-
     tipo = dados["tipo"]
 
-    if not pai:
+    pai = dados.get(
+        "pai"
+    )
+
+    # =====================================================
+    # ROOT TYPE
+    # =====================================================
+
+    if is_root_tipo(tipo):
+
+        if pai:
+
+            raise Exception(
+                "Tipo raiz não pode possuir pai."
+            )
+
         return
+
+    # =====================================================
+    # OBRIGATÓRIO
+    # =====================================================
+
+    if permite_pai(tipo):
+
+        if not pai:
+
+            raise Exception(
+                "Menu pai obrigatório."
+            )
 
     menu_pai = lookup.get(pai)
 
@@ -305,31 +377,45 @@ def validar_pai(
             "Menu pai inválido."
         )
 
-    if not menu_pai["ativo"]:
+    tipo_pai = menu_pai["tipo"]
+
+    # =====================================================
+    # LEAF
+    # =====================================================
+
+    if is_leaf_tipo(tipo_pai):
 
         raise Exception(
-            "Menu pai inativo."
+            "Menu pai não aceita filhos."
         )
 
-    if menu_pai["tipo"] == "M":
+    # =====================================================
+    # DOMÍNIO CENTRAL
+    # =====================================================
+
+    if not validar_hierarquia(
+
+        tipo,
+
+        tipo_pai
+    ):
 
         raise Exception(
-            "Menus do tipo M não podem possuir filhos."
-        )
-
-    if tipo == "T":
-
-        raise Exception(
-            "Títulos não podem possuir pai."
+            (
+                f"Hierarquia inválida "
+                f"{tipo} -> {tipo_pai}"
+            )
         )
 
 
-# ==================================================
+# =========================================================
 # DUPLICIDADE
-# ==================================================
+# =========================================================
 
 def validar_duplicidade(
+
     cursor,
+
     dados
 ):
 
@@ -337,11 +423,13 @@ def validar_duplicidade(
 
     rota = dados["rota"]
 
-    menu_id = dados.get("id")
+    menu_id = dados.get(
+        "id"
+    )
 
-    # ==============================================
+    # =====================================================
     # NOME
-    # ==============================================
+    # =====================================================
 
     if menu_id:
 
@@ -356,7 +444,9 @@ def validar_duplicidade(
                 AND Id <> ?
 
         """, (
+
             nome.upper(),
+
             menu_id
         ))
 
@@ -368,7 +458,8 @@ def validar_duplicidade(
 
             FROM Menu
 
-            WHERE UPPER(Nome) = ?
+            WHERE
+                UPPER(Nome) = ?
 
         """, (
             nome.upper(),
@@ -380,17 +471,11 @@ def validar_duplicidade(
             "Já existe menu com esse nome."
         )
 
-    # ==============================================
+    # =====================================================
     # ROTA
-    # ==============================================
+    # =====================================================
 
     if rota:
-
-        if rota in ROTAS_PROTEGIDAS:
-
-            raise Exception(
-                "Rota protegida."
-            )
 
         if menu_id:
 
@@ -405,7 +490,9 @@ def validar_duplicidade(
                     AND Id <> ?
 
             """, (
+
                 rota,
+
                 menu_id
             ))
 
@@ -430,12 +517,14 @@ def validar_duplicidade(
             )
 
 
-# ==================================================
+# =========================================================
 # VALIDAR
-# ==================================================
+# =========================================================
 
 def validar_menu(
+
     dados,
+
     lookup=None
 ):
 
@@ -444,18 +533,52 @@ def validar_menu(
     ).strip()
 
     dados["rota"] = (
+
         str(
-            dados.get("rota")
+            dados.get(
+                "rota"
+            )
         ).strip().lower()
+
         if dados.get("rota")
+
         else None
     )
 
     dados["tipo"] = str(
-        dados.get("tipo") or "M"
+        dados.get("tipo") or ""
     ).strip().upper()
 
+    # =====================================================
+    # TIPO
+    # =====================================================
+
+    if not tipo_existe(
+        dados["tipo"]
+    ):
+
+        raise Exception(
+            "TipoMenu inválido."
+        )
+
+    # =====================================================
+    # ORDEM
+    # =====================================================
+
+    dados["ordem"] = int(
+
+        dados.get(
+
+            "ordem",
+
+            get_ordem_default(
+                dados["tipo"]
+            )
+        )
+    )
+
     dados["admin_level"] = int(
+
         dados.get(
             "admin_level",
             10
@@ -463,6 +586,7 @@ def validar_menu(
     )
 
     dados["sistema"] = int(
+
         bool(
             dados.get(
                 "sistema",
@@ -471,16 +595,9 @@ def validar_menu(
         )
     )
 
-    dados["ordem"] = int(
-        dados.get(
-            "ordem",
-            0
-        )
-    )
-
-    # ==============================================
+    # =====================================================
     # NOME
-    # ==============================================
+    # =====================================================
 
     if not dados["nome"]:
 
@@ -494,65 +611,58 @@ def validar_menu(
             "Nome muito curto."
         )
 
-    # ==============================================
-    # ORDEM
-    # ==============================================
+    # =====================================================
+    # ROOT TYPE
+    # =====================================================
 
-    if dados["ordem"] < 0:
-
-        raise Exception(
-            "Ordem inválida."
-        )
-
-    # ==============================================
-    # TIPO
-    # ==============================================
-
-    if dados["tipo"] not in TIPOS_VALIDOS:
-
-        raise Exception(
-            "TipoMenu inválido."
-        )
-
-    # ==============================================
-    # TÍTULO
-    # ==============================================
-
-    if dados["tipo"] == "T":
-
-        dados["rota"] = None
+    if is_root_tipo(
+        dados["tipo"]
+    ):
 
         dados["pai"] = None
 
-    # ==============================================
-    # SUBMENU
-    # ==============================================
+    # =====================================================
+    # ROTA
+    # =====================================================
 
-    elif dados["tipo"] == "S":
+    if not permite_rota(
+        dados["tipo"]
+    ):
 
         dados["rota"] = None
 
-    # ==============================================
-    # MENU
-    # ==============================================
-
-    elif dados["tipo"] == "M":
+    else:
 
         if not dados["rota"]:
 
             raise Exception(
-                "Menu precisa de rota."
+                "Rota obrigatória."
             )
 
-    # ==============================================
+    # =====================================================
+    # PAI
+    # =====================================================
+
+    if not permite_pai(
+        dados["tipo"]
+    ):
+
+        dados["pai"] = None
+
+    # =====================================================
     # AUTO PAI
-    # ==============================================
+    # =====================================================
 
     if (
+
         dados.get("id")
+
         and
+
         dados.get("pai")
+
         and
+
         dados["id"] == dados["pai"]
     ):
 
@@ -560,14 +670,16 @@ def validar_menu(
             "Menu não pode ser pai dele mesmo."
         )
 
-    # ==============================================
+    # =====================================================
     # LOOP
-    # ==============================================
+    # =====================================================
 
     if lookup:
 
-        validar_pai(
+        validar_hierarquia_menu(
+
             dados,
+
             lookup
         )
 
@@ -583,13 +695,16 @@ def validar_menu(
     return dados
 
 
-# ==================================================
+# =========================================================
 # SEGURANÇA
-# ==================================================
+# =========================================================
 
 def validar_seguranca(
+
     usuario,
+
     dados,
+
     atual=None
 ):
 
@@ -606,16 +721,16 @@ def validar_seguranca(
         )
     )
 
-    # ==============================================
+    # =====================================================
     # ROOT
-    # ==============================================
+    # =====================================================
 
-    if usuario_level >= ROOT_LEVEL:
+    if usuario_level >= ADMIN_LEVEL_ROOT:
         return
 
-    # ==============================================
+    # =====================================================
     # SISTEMA
-    # ==============================================
+    # =====================================================
 
     if dados.get("sistema"):
 
@@ -623,24 +738,24 @@ def validar_seguranca(
             "Somente ROOT altera menus estruturais."
         )
 
-    # ==============================================
+    # =====================================================
     # ROOT MENU
-    # ==============================================
+    # =====================================================
 
     if int(
         dados.get(
             "admin_level",
             0
         )
-    ) >= ROOT_LEVEL:
+    ) >= ADMIN_LEVEL_ROOT:
 
         raise Exception(
             "Somente ROOT cria menus ROOT."
         )
 
-    # ==============================================
+    # =====================================================
     # MENU ATUAL
-    # ==============================================
+    # =====================================================
 
     if atual:
 
@@ -655,25 +770,21 @@ def validar_seguranca(
                 "admin_level",
                 0
             )
-        ) >= ROOT_LEVEL:
+        ) >= ADMIN_LEVEL_ROOT:
 
             raise Exception(
                 "Menu ROOT protegido."
             )
 
-        if atual.get("rota") in ROTAS_PROTEGIDAS:
 
-            raise Exception(
-                "Menu protegido."
-            )
-
-
-# ==================================================
-# SALVAR
-# ==================================================
+# =========================================================
+# SAVE
+# =========================================================
 
 def salvar_menu(
+
     usuario,
+
     dados
 ):
 
@@ -696,12 +807,16 @@ def salvar_menu(
         menus = resultado["dados"]
 
         lookup = {
+
             m["id"]: m
+
             for m in menus
         }
 
         dados = validar_menu(
+
             dados,
+
             lookup
         )
 
@@ -724,17 +839,23 @@ def salvar_menu(
             ]
 
         validar_seguranca(
+
             usuario,
+
             dados,
+
             atual
         )
 
         validar_duplicidade(
+
             cursor,
+
             dados
         )
 
         ativo = int(
+
             bool(
                 dados.get(
                     "ativo",
@@ -743,9 +864,9 @@ def salvar_menu(
             )
         )
 
-        # ==========================================
+        # =================================================
         # UPDATE
-        # ==========================================
+        # =================================================
 
         if dados.get("id"):
 
@@ -800,9 +921,9 @@ def salvar_menu(
 
             mensagem = "Menu atualizado."
 
-        # ==========================================
+        # =================================================
         # INSERT
-        # ==========================================
+        # =================================================
 
         else:
 
@@ -857,15 +978,21 @@ def salvar_menu(
 
         conn.commit()
 
-        return ok(mensagem)
+        LOGGER.info(
+            mensagem
+        )
+
+        return ok(
+            mensagem
+        )
 
     except Exception as ex:
 
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "MENU SAVE ERROR"
+        LOGGER.exception(
+            "SAVE_MENU_ERROR"
         )
 
         return erro(ex)
@@ -873,23 +1000,30 @@ def salvar_menu(
     finally:
 
         try:
+
             if conn:
                 conn.close()
-        except:
+
+        except Exception:
+
             pass
 
 
-# ==================================================
+# =========================================================
 # DESATIVAR FILHOS
-# ==================================================
+# =========================================================
 
 def desativar_filhos(
+
     cursor,
+
     menu_id,
+
     visitados=None
 ):
 
     if visitados is None:
+
         visitados = set()
 
     if menu_id in visitados:
@@ -902,14 +1036,15 @@ def desativar_filhos(
         SELECT
             Id,
             Sistema,
-            AdminLevel,
-            Rota
+            AdminLevel
 
         FROM Menu
 
         WHERE MenuPaiId = ?
 
-    """, (menu_id,))
+    """, (
+        menu_id,
+    ))
 
     filhos = cursor.fetchall()
 
@@ -923,24 +1058,22 @@ def desativar_filhos(
             f[2] or 0
         )
 
-        rota = (
-            str(f[3]).lower()
-            if f[3]
-            else None
-        )
-
-        # ==========================================
+        # =================================================
         # PROTEGIDOS
-        # ==========================================
+        # =================================================
 
         if sistema:
             continue
 
-        if admin_level >= ROOT_LEVEL:
+        if admin_level >= ADMIN_LEVEL_ROOT:
             continue
 
-        if rota in ROTAS_PROTEGIDAS:
-            continue
+        LOGGER.info(
+            (
+                f"DISABLE_CHILD "
+                f"{filho_id}"
+            )
+        )
 
         cursor.execute("""
 
@@ -950,21 +1083,28 @@ def desativar_filhos(
 
             WHERE Id = ?
 
-        """, (filho_id,))
+        """, (
+            filho_id,
+        ))
 
         desativar_filhos(
+
             cursor,
+
             filho_id,
+
             visitados
         )
 
 
-# ==================================================
-# EXCLUIR
-# ==================================================
+# =========================================================
+# DELETE
+# =========================================================
 
 def excluir_menu(
+
     usuario,
+
     menu_id
 ):
 
@@ -989,16 +1129,13 @@ def excluir_menu(
         menu = resultado["dados"]
 
         validar_seguranca(
+
             usuario,
+
             menu,
+
             menu
         )
-
-        if menu.get("rota") in ROTAS_PROTEGIDAS:
-
-            raise Exception(
-                "Menu protegido."
-            )
 
         cursor.execute("""
 
@@ -1008,10 +1145,14 @@ def excluir_menu(
 
             WHERE Id = ?
 
-        """, (menu_id,))
+        """, (
+            menu_id,
+        ))
 
         desativar_filhos(
+
             cursor,
+
             menu_id
         )
 
@@ -1029,6 +1170,13 @@ def excluir_menu(
 
         conn.commit()
 
+        LOGGER.info(
+            (
+                f"DELETE_MENU "
+                f"{menu_id}"
+            )
+        )
+
         return ok(
             "Menu desativado."
         )
@@ -1038,8 +1186,8 @@ def excluir_menu(
         if conn:
             conn.rollback()
 
-        logging.exception(
-            "MENU DELETE ERROR"
+        LOGGER.exception(
+            "DELETE_MENU_ERROR"
         )
 
         return erro(ex)
@@ -1047,7 +1195,10 @@ def excluir_menu(
     finally:
 
         try:
+
             if conn:
                 conn.close()
-        except:
+
+        except Exception:
+
             pass

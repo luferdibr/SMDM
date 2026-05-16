@@ -1,213 +1,77 @@
 
-import json
 import logging
-import socket
+import traceback
 from datetime import datetime
 
-from database.connection import get_connection
+from database.connection import (
+    get_connection
+)
 
 
 # ==================================================
 # CONFIG
 # ==================================================
 
-MAX_LOGIN = 50
-
-MAX_EVENTO = 100
-
-MAX_MODULO = 100
-
-MAX_ENTIDADE = 100
-
 MAX_DETALHES = 4000
 
-MAX_IP = 50
+SEVERIDADE_INFO = "INFO"
 
-MAX_HOST = 120
+SEVERIDADE_WARN = "WARN"
 
-
-EVENTOS_VALIDOS = {
-
-    "LOGIN_SUCCESS",
-
-    "LOGIN_FAIL",
-
-    "LOGOUT",
-
-    "PASSWORD_CHANGE",
-
-    "USER_CREATE",
-
-    "USER_UPDATE",
-
-    "USER_DISABLE",
-
-    "USER_ENABLE",
-
-    "PROFILE_CREATE",
-
-    "PROFILE_UPDATE",
-
-    "PROFILE_DISABLE",
-
-    "MENU_CREATE",
-
-    "MENU_UPDATE",
-
-    "MENU_DELETE",
-
-    "PERMISSION_SAVE",
-
-    "PERMISSION_COPY",
-
-    "SYSTEM_BOOT",
-
-    "SYSTEM_INSTALL",
-
-    "SYSTEM_ERROR"
-}
+SEVERIDADE_ERROR = "ERROR"
 
 
 # ==================================================
-# HOST
+# LOGGER
 # ==================================================
 
-try:
+LOGGER = logging.getLogger(
+    "MDM_AUDITORIA"
+)
 
-    HOSTNAME = socket.gethostname()
+if not LOGGER.handlers:
 
-except Exception:
+    logging.basicConfig(
 
-    HOSTNAME = "UNKNOWN"
+        level=logging.INFO,
+
+        format=(
+            "%(asctime)s "
+            "[%(levelname)s] "
+            "%(message)s"
+        )
+    )
 
 
 # ==================================================
 # HELPERS
 # ==================================================
 
-def ok(
-    mensagem="OK",
-    dados=None
-):
-
-    return {
-
-        "sucesso": True,
-
-        "mensagem": mensagem,
-
-        "dados": dados
-    }
-
-
-def erro(
-    mensagem,
-    dados=None
-):
-
-    return {
-
-        "sucesso": False,
-
-        "mensagem": str(mensagem),
-
-        "dados": dados
-    }
-
-
-# ==================================================
-# NORMALIZAR TEXTO
-# ==================================================
-
-def normalizar_texto(
-
-    valor,
-
-    tamanho=None,
-
-    upper=False
-):
+def _safe_str(valor):
 
     if valor is None:
-
         return None
 
     try:
 
-        valor = str(valor).strip()
+        texto = str(valor).strip()
+
+        if not texto:
+            return None
+
+        return texto[:MAX_DETALHES]
 
     except Exception:
 
-        try:
-
-            valor = json.dumps(
-
-                valor,
-
-                ensure_ascii=False,
-
-                default=str
-            )
-
-        except Exception:
-
-            valor = "[OBJETO_INVALIDO]"
-
-    # ==============================================
-    # SANITIZAÇÃO
-    # ==============================================
-
-    termos_proibidos = [
-
-        "password",
-
-        "senha",
-
-        "token",
-
-        "secret",
-
-        "connection string",
-
-        "pwd=",
-
-        "uid="
-    ]
-
-    valor_lower = valor.lower()
-
-    for termo in termos_proibidos:
-
-        if termo in valor_lower:
-
-            valor = "[CONTEUDO_SENSIVEL]"
-
-            break
-
-    if upper:
-
-        valor = valor.upper()
-
-    if tamanho:
-
-        valor = valor[:tamanho]
-
-    return valor
-
-
-# ==================================================
-# NORMALIZAR INTEIRO
-# ==================================================
-
-def normalizar_inteiro(valor):
-
-    if valor in (
-        None,
-        ""
-    ):
         return None
 
+
+def _safe_int(valor):
+
     try:
+
+        if valor is None:
+            return None
 
         return int(valor)
 
@@ -216,186 +80,63 @@ def normalizar_inteiro(valor):
         return None
 
 
-# ==================================================
-# SERIALIZAR
-# ==================================================
+def _safe_bool(valor):
 
-def serializar_detalhes(detalhes):
+    try:
+        return bool(valor)
 
-    if detalhes is None:
+    except Exception:
+        return False
 
-        return None
 
-    if isinstance(
-
-        detalhes,
-
-        (
-            str,
-            int,
-            float,
-            bool
-        )
-    ):
-
-        return normalizar_texto(
-
-            detalhes,
-
-            tamanho=MAX_DETALHES
-        )
+def gerar_detalhes_erro(ex):
 
     try:
 
-        texto = json.dumps(
+        return (
 
-            detalhes,
-
-            ensure_ascii=False,
-
-            default=str
-        )
-
-        return normalizar_texto(
-
-            texto,
-
-            tamanho=MAX_DETALHES
-        )
+            f"{type(ex).__name__}: "
+            f"{str(ex)}\n\n"
+            f"{traceback.format_exc()}"
+        )[:MAX_DETALHES]
 
     except Exception:
 
-        return "[DETALHE_INVALIDO]"
+        return "Erro ao gerar traceback."
 
 
 # ==================================================
-# REGISTRAR EVENTO
+# REGISTRO BASE
 # ==================================================
 
 def registrar_evento(
 
-    usuario=None,
-
-    evento=None,
-
-    descricao=None,
+    acao,
 
     entidade=None,
 
     registro_id=None,
 
-    modulo=None,
+    detalhes=None,
 
-    nivel="INFO",
+    usuario_id=None,
 
-    ip=None
+    login=None,
+
+    severidade=SEVERIDADE_INFO,
+
+    sucesso=True
 ):
-    """
-    Auditoria resiliente.
-
-    Nunca deve quebrar o sistema.
-    Nunca deve gerar rollback operacional.
-    """
 
     conn = None
 
-    cursor = None
-
     try:
 
-        # ==========================================
-        # USUÁRIO
-        # ==========================================
+        acao = _safe_str(acao)
 
-        usuario_id = None
+        if not acao:
 
-        login = None
-
-        if isinstance(usuario, dict):
-
-            usuario_id = normalizar_inteiro(
-
-                usuario.get("id")
-            )
-
-            login = normalizar_texto(
-
-                usuario.get("login"),
-
-                tamanho=MAX_LOGIN,
-
-                upper=True
-            )
-
-        # ==========================================
-        # NORMALIZAÇÃO
-        # ==========================================
-
-        evento = normalizar_texto(
-
-            evento or "EVENTO",
-
-            tamanho=MAX_EVENTO,
-
-            upper=True
-        )
-
-        descricao = serializar_detalhes(
-            descricao
-        )
-
-        entidade = normalizar_texto(
-
-            entidade,
-
-            tamanho=MAX_ENTIDADE
-        )
-
-        modulo = normalizar_texto(
-
-            modulo,
-
-            tamanho=MAX_MODULO
-        )
-
-        nivel = normalizar_texto(
-
-            nivel or "INFO",
-
-            tamanho=20,
-
-            upper=True
-        )
-
-        ip = normalizar_texto(
-
-            ip,
-
-            tamanho=MAX_IP
-        )
-
-        registro_id = normalizar_inteiro(
-            registro_id
-        )
-
-        host = normalizar_texto(
-
-            HOSTNAME,
-
-            tamanho=MAX_HOST
-        )
-
-        # ==========================================
-        # EVENTO
-        # ==========================================
-
-        if evento not in EVENTOS_VALIDOS:
-
-            evento = "SYSTEM_ERROR"
-
-        # ==========================================
-        # CONNECTION
-        # ==========================================
+            return False
 
         conn = get_connection()
 
@@ -409,104 +150,64 @@ def registrar_evento(
 
             INSERT INTO Auditoria
             (
-                UsuarioID,
+                UsuarioId,
                 LoginUsuario,
-                Evento,
-                NivelLog,
-                Modulo,
+                Acao,
                 Entidade,
-                RegistroID,
-                IPOrigem,
-                HostOrigem,
-                Descricao,
+                RegistroId,
+                Detalhes,
+                Severidade,
+                Sucesso,
                 DataEvento
             )
 
             VALUES
             (
-                ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, GETDATE()
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, GETDATE()
             )
 
         """, (
 
-            usuario_id,
+            _safe_int(usuario_id),
 
-            login,
+            _safe_str(login),
 
-            evento,
+            acao,
 
-            nivel,
+            _safe_str(entidade),
 
-            modulo,
+            _safe_int(registro_id),
 
-            entidade,
+            _safe_str(detalhes),
 
-            registro_id,
+            _safe_str(severidade),
 
-            ip,
-
-            host,
-
-            descricao
+            int(_safe_bool(sucesso))
         ))
 
         conn.commit()
 
-        logging.info(
+        LOGGER.info(
 
             (
-                f"AUDITORIA "
-                f"{evento} "
-                f"{login or 'SYSTEM'}"
+                f"[AUDITORIA] "
+                f"{acao} | "
+                f"{login or '-'}"
             )
         )
 
-        return ok(
-            "Evento registrado."
-        )
+        return True
 
-    except Exception as ex:
+    except Exception:
 
-        # ==========================================
-        # ROLLBACK
-        # ==========================================
-
-        try:
-
-            if conn:
-                conn.rollback()
-
-        except Exception:
-            pass
-
-        # ==========================================
-        # FAIL SAFE
-        # ==========================================
-
-        logging.exception(
+        LOGGER.exception(
             "AUDITORIA ERROR"
         )
 
-        return erro(ex)
+        return False
 
     finally:
-
-        # ==========================================
-        # CURSOR
-        # ==========================================
-
-        try:
-
-            if cursor:
-                cursor.close()
-
-        except Exception:
-            pass
-
-        # ==========================================
-        # CONNECTION
-        # ==========================================
 
         try:
 
@@ -518,252 +219,273 @@ def registrar_evento(
 
 
 # ==================================================
-# REGISTRAR ERRO
+# LOGIN
+# ==================================================
+
+def registrar_login(
+
+    login,
+
+    sucesso=True,
+
+    detalhes=None,
+
+    usuario_id=None
+):
+
+    return registrar_evento(
+
+        usuario_id=usuario_id,
+
+        login=login,
+
+        acao=(
+            "LOGIN_SUCESSO"
+            if sucesso
+            else
+            "LOGIN_FALHA"
+        ),
+
+        entidade="LOGIN",
+
+        detalhes=detalhes,
+
+        severidade=(
+
+            SEVERIDADE_INFO
+
+            if sucesso
+
+            else
+
+            SEVERIDADE_WARN
+        ),
+
+        sucesso=sucesso
+    )
+
+
+# ==================================================
+# LOGOUT
+# ==================================================
+
+def registrar_logout(
+
+    login,
+
+    usuario_id=None,
+
+    detalhes=None
+):
+
+    return registrar_evento(
+
+        usuario_id=usuario_id,
+
+        login=login,
+
+        acao="LOGOUT",
+
+        entidade="LOGIN",
+
+        detalhes=detalhes,
+
+        severidade=SEVERIDADE_INFO,
+
+        sucesso=True
+    )
+
+
+# ==================================================
+# ERRO
 # ==================================================
 
 def registrar_erro(
 
-    erro_obj,
-
-    usuario=None,
+    erro,
 
     modulo=None,
 
-    entidade=None
+    login=None,
+
+    usuario_id=None
 ):
 
-    try:
+    detalhes = (
 
-        return registrar_evento(
+        gerar_detalhes_erro(erro)
 
-            usuario=usuario,
+        if isinstance(erro, Exception)
 
-            evento="SYSTEM_ERROR",
+        else
 
-            descricao=str(erro_obj),
+        _safe_str(erro)
+    )
 
-            entidade=entidade,
+    return registrar_evento(
 
-            modulo=modulo,
+        usuario_id=usuario_id,
 
-            nivel="ERROR"
-        )
+        login=login,
 
-    except Exception:
+        acao="ERRO",
 
-        logging.exception(
-            "REGISTER ERROR FAIL"
-        )
+        entidade=_safe_str(modulo),
 
-        return erro(
-            "Falha auditoria."
-        )
+        detalhes=detalhes,
+
+        severidade=SEVERIDADE_ERROR,
+
+        sucesso=False
+    )
 
 
 # ==================================================
-# LISTAR EVENTOS
+# CRUD HELPERS
 # ==================================================
 
-def listar_eventos(
+def registrar_criacao(
 
-    usuario=None,
+    entidade,
 
-    filtro=None,
+    registro_id=None,
 
-    evento=None,
+    detalhes=None,
 
-    data_inicio=None,
+    usuario_id=None,
 
-    data_fim=None,
-
-    limite=200
+    login=None
 ):
 
-    conn = None
+    return registrar_evento(
 
-    cursor = None
+        usuario_id=usuario_id,
 
-    try:
+        login=login,
 
-        limite = int(limite)
+        acao="CRIACAO",
 
-        if limite <= 0:
-            limite = 200
+        entidade=entidade,
 
-        if limite > 1000:
-            limite = 1000
+        registro_id=registro_id,
 
-        conn = get_connection()
+        detalhes=detalhes
+    )
 
-        cursor = conn.cursor()
 
-        sql = """
+def registrar_alteracao(
 
-            SELECT TOP (?)
+    entidade,
 
-                Id,
-                UsuarioID,
-                LoginUsuario,
-                Evento,
-                NivelLog,
-                Modulo,
-                Entidade,
-                RegistroID,
-                IPOrigem,
-                HostOrigem,
-                Descricao,
-                DataEvento
+    registro_id=None,
 
-            FROM Auditoria
+    detalhes=None,
 
-            WHERE 1=1
+    usuario_id=None,
 
-        """
+    login=None
+):
 
-        params = [limite]
+    return registrar_evento(
 
-        # ==========================================
-        # EVENTO
-        # ==========================================
+        usuario_id=usuario_id,
 
-        if evento:
+        login=login,
 
-            sql += """
+        acao="ALTERACAO",
 
-                AND Evento = ?
+        entidade=entidade,
 
-            """
+        registro_id=registro_id,
 
-            params.append(
-                str(evento).upper()
-            )
+        detalhes=detalhes
+    )
 
-        # ==========================================
-        # FILTRO
-        # ==========================================
 
-        if filtro:
+def registrar_exclusao(
 
-            sql += """
+    entidade,
 
-                AND
-                (
-                    LoginUsuario LIKE ?
-                    OR Evento LIKE ?
-                    OR Descricao LIKE ?
-                )
+    registro_id=None,
 
-            """
+    detalhes=None,
 
-            busca = f"%{filtro}%"
+    usuario_id=None,
 
-            params.extend([
-                busca,
-                busca,
-                busca
-            ])
+    login=None
+):
 
-        # ==========================================
-        # DATA INICIO
-        # ==========================================
+    return registrar_evento(
 
-        if data_inicio:
+        usuario_id=usuario_id,
 
-            sql += """
+        login=login,
 
-                AND DataEvento >= ?
+        acao="EXCLUSAO",
 
-            """
+        entidade=entidade,
 
-            params.append(data_inicio)
+        registro_id=registro_id,
 
-        # ==========================================
-        # DATA FIM
-        # ==========================================
+        detalhes=detalhes,
 
-        if data_fim:
+        severidade=SEVERIDADE_WARN
+    )
 
-            sql += """
 
-                AND DataEvento <= ?
+# ==================================================
+# EVENTOS SISTEMA
+# ==================================================
 
-            """
+def registrar_evento_sistema(
 
-            params.append(data_fim)
+    acao,
 
-        sql += """
+    detalhes=None
+):
 
-            ORDER BY
-                Id DESC
+    return registrar_evento(
 
-        """
+        login="SYSTEM",
 
-        cursor.execute(
-            sql,
-            tuple(params)
-        )
+        acao=acao,
 
-        rows = cursor.fetchall()
+        entidade="SISTEMA",
 
-        dados = []
+        detalhes=detalhes,
 
-        for r in rows:
+        severidade=SEVERIDADE_INFO
+    )
 
-            dados.append({
 
-                "id": r[0],
+# ==================================================
+# SEGURANÇA
+# ==================================================
 
-                "usuario_id": r[1],
+def registrar_evento_seguranca(
 
-                "login": r[2],
+    acao,
 
-                "evento": r[3],
+    detalhes=None,
 
-                "nivel": r[4],
+    login=None,
 
-                "modulo": r[5],
+    usuario_id=None
+):
 
-                "entidade": r[6],
+    return registrar_evento(
 
-                "registro_id": r[7],
+        usuario_id=usuario_id,
 
-                "ip": r[8],
+        login=login,
 
-                "host": r[9],
+        acao=acao,
 
-                "descricao": r[10],
+        entidade="SEGURANCA",
 
-                "data_evento": (
-                    r[11].isoformat()
-                    if r[11]
-                    else None
-                )
-            })
+        detalhes=detalhes,
 
-        return ok(
-            dados=dados
-        )
+        severidade=SEVERIDADE_WARN,
 
-    except Exception as ex:
-
-        logging.exception(
-            "AUDIT LIST ERROR"
-        )
-
-        return erro(ex)
-
-    finally:
-
-        try:
-
-            if cursor:
-                cursor.close()
-        except Exception:
-            pass
-
-        try:
-
-            if conn:
-                conn.close()
-        except Exception:
-            pass
+        sucesso=False
+    )

@@ -1,23 +1,26 @@
 
 import logging
-import bcrypt
-import hashlib
 
-from datetime import (
-    datetime,
-    timedelta
-)
+from datetime import datetime
+from typing import Optional
 
 from database.connection import (
     get_connection
+)
+
+from security.password_service import (
+    verificar_senha,
+    gerar_hash
 )
 
 from services.auditoria_service import (
     registrar_evento
 )
 
-from config.settings import (
-    SECURITY
+from services.security_service import (
+    usuario_bloqueado,
+    registrar_falha_login,
+    registrar_login_sucesso
 )
 
 
@@ -25,183 +28,22 @@ from config.settings import (
 # CONFIG
 # ==================================================
 
-MAX_TENTATIVAS = int(
-
-    SECURITY.get(
-        "max_login_attempts",
-        5
-    )
-)
-
 ROOT_LEVEL = 100
 
-ADMIN_LEVEL = 50
+ADMIN_LEVEL = 90
 
-HASH_TYPES = (
-    "$2a$",
-    "$2b$",
-    "$2y$"
+
+# ==================================================
+# LOGGER
+# ==================================================
+
+LOGGER = logging.getLogger(
+    "MDM_AUTH"
 )
 
 
 # ==================================================
 # HELPERS
-# ==================================================
-
-def normalizar_login(login):
-
-    return str(
-        login or ""
-    ).strip().upper()
-
-
-def normalizar_senha(senha):
-
-    return str(
-        senha or ""
-    ).strip()
-
-
-def is_root(usuario):
-
-    return bool(
-        usuario
-        and
-        int(
-            usuario.get(
-                "admin_level",
-                0
-            )
-        ) >= ROOT_LEVEL
-    )
-
-
-def is_admin(usuario):
-
-    return bool(
-        usuario
-        and
-        int(
-            usuario.get(
-                "admin_level",
-                0
-            )
-        ) >= ADMIN_LEVEL
-    )
-
-
-def possui_nivel(
-
-    usuario,
-
-    nivel
-):
-
-    return bool(
-        usuario
-        and
-        int(
-            usuario.get(
-                "admin_level",
-                0
-            )
-        ) >= int(nivel)
-    )
-
-
-# ==================================================
-# HASH
-# ==================================================
-
-def gerar_hash(senha):
-
-    senha = normalizar_senha(
-        senha
-    )
-
-    return bcrypt.hashpw(
-
-        senha.encode("utf-8"),
-
-        bcrypt.gensalt()
-
-    ).decode("utf-8")
-
-
-def validar_hash(
-
-    senha,
-
-    senha_hash
-):
-
-    senha = normalizar_senha(
-        senha
-    )
-
-    senha_hash = str(
-        senha_hash or ""
-    ).strip()
-
-    if not senha:
-        return False, None
-
-    if not senha_hash:
-        return False, None
-
-    # ==============================================
-    # BCRYPT
-    # ==============================================
-
-    try:
-
-        if senha_hash.startswith(
-            HASH_TYPES
-        ):
-
-            ok = bcrypt.checkpw(
-
-                senha.encode("utf-8"),
-
-                senha_hash.encode("utf-8")
-            )
-
-            if ok:
-                return True, "bcrypt"
-
-    except Exception:
-
-        logging.exception(
-            "BCRYPT VALIDATION ERROR"
-        )
-
-    # ==============================================
-    # SHA256 LEGADO
-    # ==============================================
-
-    try:
-
-        sha256_hash = hashlib.sha256(
-
-            senha.encode("utf-8")
-
-        ).hexdigest().lower()
-
-        if sha256_hash == senha_hash.lower():
-
-            return True, "sha256"
-
-    except Exception:
-
-        logging.exception(
-            "SHA256 VALIDATION ERROR"
-        )
-
-    return False, None
-
-
-# ==================================================
-# AUDITORIA
 # ==================================================
 
 def auditoria_segura(**kwargs):
@@ -212,44 +54,25 @@ def auditoria_segura(**kwargs):
 
     except Exception:
 
-        logging.exception(
+        LOGGER.exception(
             "AUDITORIA ERROR"
         )
 
 
-# ==================================================
-# LOGIN FAIL
-# ==================================================
+def auth_fail(
+    mensagem="Usuário ou senha inválidos.",
+    bloqueado=False
+):
 
-def retorno_falha(**kwargs):
-
-    retorno = {
+    return {
 
         "autenticado": False,
 
-        "ativo": False,
+        "bloqueado": bloqueado,
 
-        "perfil_ativo": False,
-
-        "bloqueado": False,
-
-        "senha_expirada": False,
-
-        "trocar_senha": False,
-
-        "is_root": False,
-
-        "is_admin": False
+        "mensagem": mensagem
     }
 
-    retorno.update(kwargs)
-
-    return retorno
-
-
-# ==================================================
-# MAP USER
-# ==================================================
 
 def map_usuario(row):
 
@@ -275,277 +98,184 @@ def map_usuario(row):
 
         "senha_temporaria": bool(row[9]),
 
-        "data_troca": row[10],
+        "ultimo_login": row[10],
 
-        "ultimo_login": row[11],
+        "ultimo_troca": row[11],
 
-        "senha_migrada": bool(row[12]),
+        "perfil_nome": row[12],
 
-        "perfil_nome": row[13],
+        "admin_level": int(row[13] or 0),
 
-        "validade_senha": row[14],
+        "perfil_sistema": bool(row[14]),
 
-        "perfil_ativo": bool(row[15]),
+        "validade_senha": row[15],
 
-        "admin_level": int(row[16] or 0),
+        "bloqueado_ate": row[16],
 
-        "perfil_sistema": bool(row[17])
+        "nivel_bloqueio": int(row[17] or 0),
+
+        "bloqueio_total": bool(row[18])
     }
 
 
-# ==================================================
-# UPDATE HELPERS
-# ==================================================
-
-def resetar_tentativas(
-
+def obter_usuario(
     cursor,
-
-    user_id
-):
+    login
+) -> Optional[dict]:
 
     cursor.execute("""
 
-        UPDATE Usuarios
+        SELECT
 
-        SET
-            TentativasLogin = 0
+            u.Id,
+            u.Login,
+            u.Nome,
+            u.SenhaHash,
+            u.PerfilId,
+            u.Ativo,
+            u.Bloqueado,
+            u.TentativasLogin,
+            u.DeveTrocarSenha,
+            u.SenhaTemporaria,
+            u.UltimoLogin,
+            u.DataUltimaTrocaSenha,
 
-        WHERE Id = ?
+            p.Nome,
+            p.AdminLevel,
+            p.Sistema,
+            p.ValidadeSenhaDias,
 
-    """, (user_id,))
+            u.BloqueadoAte,
+            u.NivelBloqueio,
+            u.BloqueioTotal
 
+        FROM Usuarios u
 
-def incrementar_tentativas(
+        INNER JOIN Perfis p
+            ON p.Id = u.PerfilId
 
-    cursor,
-
-    user_id,
-
-    tentativas
-):
-
-    tentativas = int(
-        tentativas or 0
-    ) + 1
-
-    bloqueado = int(
-        tentativas >= MAX_TENTATIVAS
-    )
-
-    cursor.execute("""
-
-        UPDATE Usuarios
-
-        SET
-            TentativasLogin = ?,
-            Bloqueado = ?
-
-        WHERE Id = ?
+        WHERE UPPER(u.Login) = ?
 
     """, (
 
-        tentativas,
+        str(login).strip().upper(),
 
-        bloqueado,
-
-        user_id
     ))
 
+    row = cursor.fetchone()
 
-def atualizar_ultimo_login(
+    if not row:
+        return None
 
-    cursor,
-
-    user_id
-):
-
-    cursor.execute("""
-
-        UPDATE Usuarios
-
-        SET
-            DataUltimoLogin = GETDATE()
-
-        WHERE Id = ?
-
-    """, (user_id,))
+    return map_usuario(row)
 
 
-def migrar_sha256(
+def senha_expirada(usuario):
 
-    cursor,
-
-    user_id,
-
-    senha
-):
-
-    novo_hash = gerar_hash(
-        senha
+    validade = usuario.get(
+        "validade_senha"
     )
 
-    cursor.execute("""
-
-        UPDATE Usuarios
-
-        SET
-            SenhaHash = ?,
-            SenhaMigrada = 1,
-            DataUltimaTrocaSenha =
-                ISNULL(
-                    DataUltimaTrocaSenha,
-                    GETDATE()
-                )
-
-        WHERE Id = ?
-
-    """, (
-
-        novo_hash,
-
-        user_id
-    ))
-
-
-# ==================================================
-# EXPIRAÇÃO
-# ==================================================
-
-def senha_expirada(
-
-    admin_level,
-
-    validade_dias,
-
-    data_troca
-):
-
-    # ROOT NÃO EXPIRA
-
-    if int(admin_level) >= ROOT_LEVEL:
+    if not validade:
         return False
 
-    # SEM VALIDADE
+    ultima_troca = usuario.get(
+        "ultimo_troca"
+    )
 
-    if not validade_dias:
-        return False
-
-    # NUNCA TROCOU
-
-    if not data_troca:
+    if not ultima_troca:
         return True
 
-    try:
+    dias = (
 
-        limite = (
+        datetime.now()
 
-            data_troca
+        - ultima_troca
 
-            + timedelta(
-                days=int(validade_dias)
-            )
+    ).days
+
+    return dias >= int(validade)
+
+
+def is_root(usuario):
+
+    return int(
+
+        usuario.get(
+            "admin_level",
+            0
         )
 
-        return datetime.now() > limite
+    ) >= ROOT_LEVEL
 
-    except Exception:
 
-        logging.exception(
-            "PASSWORD EXPIRATION ERROR"
+def is_admin(usuario):
+
+    return int(
+
+        usuario.get(
+            "admin_level",
+            0
         )
 
-        return False
+    ) >= ADMIN_LEVEL
 
 
 # ==================================================
-# VALIDAR ROOT
-# ==================================================
-
-def validar_root(user):
-
-    if not is_root(user):
-        return
-
-    if user["perfil_id"] != 1:
-
-        raise Exception(
-            "ROOT deve usar PerfilId=1."
-        )
-
-    if not user["perfil_sistema"]:
-
-        raise Exception(
-            "ROOT inválido."
-        )
-
-
-# ==================================================
-# AUTENTICAÇÃO
+# LOGIN
 # ==================================================
 
 def autenticar(
-
     login,
-
     senha
 ):
-
-    login = normalizar_login(
-        login
-    )
-
-    senha = normalizar_senha(
-        senha
-    )
 
     conn = None
 
     try:
 
+        login = str(
+            login or ""
+        ).strip().upper()
+
+        senha = str(
+            senha or ""
+        ).strip()
+
+        LOGGER.info(
+            f"Autenticando usuário {login}"
+        )
+
+        # ==========================================
+        # VALIDACOES
+        # ==========================================
+
+        if not login:
+
+            return auth_fail(
+                "Usuário obrigatório."
+            )
+
+        if not senha:
+
+            return auth_fail(
+                "Senha obrigatória."
+            )
+
         conn = get_connection()
 
         cursor = conn.cursor()
 
-        cursor.execute("""
-
-            SELECT
-                u.Id,
-                u.Login,
-                u.Nome,
-                u.SenhaHash,
-                u.PerfilId,
-                u.Ativo,
-                u.Bloqueado,
-                u.TentativasLogin,
-                u.DeveTrocarSenha,
-                u.SenhaTemporaria,
-                u.DataUltimaTrocaSenha,
-                u.DataUltimoLogin,
-                u.SenhaMigrada,
-
-                p.Nome,
-                p.ValidadeSenhaDias,
-                p.Ativo,
-                p.AdminLevel,
-                p.Sistema
-
-            FROM Usuarios u
-
-            INNER JOIN Perfis p
-                ON p.Id = u.PerfilId
-
-            WHERE UPPER(u.Login) = ?
-
-        """, (login,))
-
-        row = cursor.fetchone()
+        usuario = obter_usuario(
+            cursor,
+            login
+        )
 
         # ==========================================
-        # NÃO EXISTE
+        # USUARIO NAO EXISTE
         # ==========================================
 
-        if not row:
+        if not usuario:
 
             auditoria_segura(
 
@@ -553,320 +283,329 @@ def autenticar(
 
                 acao="LOGIN_INVALIDO",
 
-                entidade="Usuarios",
+                entidade="LOGIN",
 
                 detalhes="Usuário inexistente"
             )
 
-            return retorno_falha()
+            return auth_fail()
 
         # ==========================================
-        # MAP
+        # USUARIO SEM HASH
         # ==========================================
 
-        user = map_usuario(
-            row
+        if not usuario.get(
+            "senha_hash"
+        ):
+
+            LOGGER.error(
+                f"Usuário sem hash: {login}"
+            )
+
+            return auth_fail()
+
+        # ==========================================
+        # INATIVO
+        # ==========================================
+
+        if not usuario["ativo"]:
+
+            auditoria_segura(
+
+                usuario_id=usuario["id"],
+
+                login=usuario["login"],
+
+                acao="LOGIN_INATIVO",
+
+                entidade="LOGIN"
+            )
+
+            return auth_fail(
+                "Usuário inativo."
+            )
+
+        # ==========================================
+        # SEGURANCA
+        # ==========================================
+
+        status = usuario_bloqueado(
+            usuario
         )
 
-        user_id = user["id"]
-
-        # ==========================================
-        # ROOT
-        # ==========================================
-
-        validar_root(user)
-
-        # ==========================================
-        # USUÁRIO INATIVO
-        # ==========================================
-
-        if not user["ativo"]:
+        if status["bloqueado"]:
 
             auditoria_segura(
 
-                usuario_id=user_id,
+                usuario_id=usuario["id"],
 
-                login=user["login"],
-
-                acao="LOGIN_USUARIO_INATIVO",
-
-                entidade="Usuarios",
-
-                registro_id=user_id
-            )
-
-            return retorno_falha(
-                ativo=False
-            )
-
-        # ==========================================
-        # PERFIL INATIVO
-        # ==========================================
-
-        if not user["perfil_ativo"]:
-
-            auditoria_segura(
-
-                usuario_id=user_id,
-
-                login=user["login"],
-
-                acao="LOGIN_PERFIL_INATIVO",
-
-                entidade="Perfis",
-
-                registro_id=user["perfil_id"]
-            )
-
-            return retorno_falha(
-                ativo=True,
-                perfil_ativo=False
-            )
-
-        # ==========================================
-        # BLOQUEADO
-        # ==========================================
-
-        if user["bloqueado"]:
-
-            auditoria_segura(
-
-                usuario_id=user_id,
-
-                login=user["login"],
+                login=usuario["login"],
 
                 acao="LOGIN_BLOQUEADO",
 
-                entidade="Usuarios",
+                entidade="LOGIN",
 
-                registro_id=user_id
+                detalhes=status[
+                    "motivo"
+                ]
             )
 
-            return retorno_falha(
-                ativo=True,
-                perfil_ativo=True,
-                bloqueado=True
+            return auth_fail(
+
+                status["motivo"],
+
+                True
             )
 
         # ==========================================
-        # SENHA
+        # BCRYPT
         # ==========================================
 
-        senha_ok, metodo = validar_hash(
+        senha_ok = verificar_senha(
 
             senha,
 
-            user["senha_hash"]
+            usuario["senha_hash"]
         )
+
+        # ==========================================
+        # SENHA INVALIDA
+        # ==========================================
 
         if not senha_ok:
 
-            incrementar_tentativas(
+            seguranca = registrar_falha_login(
 
                 cursor,
 
-                user_id,
-
-                user["tentativas"]
+                usuario
             )
 
             conn.commit()
 
             auditoria_segura(
 
-                usuario_id=user_id,
+                usuario_id=usuario["id"],
 
-                login=user["login"],
+                login=usuario["login"],
 
                 acao="LOGIN_INVALIDO",
 
-                entidade="Usuarios",
+                entidade="LOGIN",
 
-                registro_id=user_id,
-
-                detalhes="Senha inválida"
-            )
-
-            return retorno_falha(
-                ativo=True,
-                perfil_ativo=True
-            )
-
-        # ==========================================
-        # RESET LOGIN
-        # ==========================================
-
-        resetar_tentativas(
-            cursor,
-            user_id
-        )
-
-        # ==========================================
-        # MIGRAR HASH
-        # ==========================================
-
-        if metodo == "sha256":
-
-            migrar_sha256(
-
-                cursor,
-
-                user_id,
-
-                senha
-            )
-
-            auditoria_segura(
-
-                usuario_id=user_id,
-
-                login=user["login"],
-
-                acao="MIGRACAO_HASH",
-
-                entidade="Usuarios",
-
-                registro_id=user_id,
+                registro_id=usuario["id"],
 
                 detalhes=(
-                    "SHA256 migrado para bcrypt"
+                    f"Tentativas="
+                    f"{usuario['tentativas'] + 1}"
                 )
             )
 
+            if seguranca["temporario"]:
+
+                auditoria_segura(
+
+                    usuario_id=usuario["id"],
+
+                    login=usuario["login"],
+
+                    acao="LOGIN_TEMP_BLOCK",
+
+                    entidade="LOGIN",
+
+                    detalhes=(
+                        f"Bloqueado por "
+                        f"{seguranca['minutos']} minutos"
+                    )
+                )
+
+            if seguranca["total"]:
+
+                auditoria_segura(
+
+                    usuario_id=usuario["id"],
+
+                    login=usuario["login"],
+
+                    acao="LOGIN_TOTAL_BLOCK",
+
+                    entidade="LOGIN"
+                )
+
+            return auth_fail()
+
         # ==========================================
-        # EXPIRAÇÃO
+        # LOGIN SUCESSO
         # ==========================================
 
-        expirada = senha_expirada(
+        registrar_login_sucesso(
 
-            user["admin_level"],
-
-            user["validade_senha"],
-
-            user["data_troca"]
-        )
-
-        # ==========================================
-        # LOGIN
-        # ==========================================
-
-        atualizar_ultimo_login(
             cursor,
-            user_id
+
+            usuario["id"]
         )
 
         conn.commit()
 
-        # ==========================================
-        # AUDITORIA
-        # ==========================================
+        usuario = obter_usuario(
+            cursor,
+            login
+        )
+
+        expirada = senha_expirada(
+            usuario
+        )
 
         auditoria_segura(
 
-            usuario_id=user_id,
+            usuario_id=usuario["id"],
 
-            login=user["login"],
+            login=usuario["login"],
 
             acao="LOGIN_SUCESSO",
 
-            entidade="Usuarios",
-
-            registro_id=user_id,
-
-            detalhes=(
-                f"perfil={user['perfil_nome']};"
-                f"level={user['admin_level']};"
-                f"hash={metodo}"
-            )
+            entidade="LOGIN"
         )
 
-        logging.info(
-            "Login realizado: %s",
-            user["login"]
+        LOGGER.info(
+            f"Login sucesso {usuario['login']}"
         )
-
-        # ==========================================
-        # RETORNO
-        # ==========================================
 
         return {
 
             "autenticado": True,
 
-            "id": user["id"],
-
-            "login": user["login"],
-
-            "nome": user["nome"],
-
-            "perfil_id": user["perfil_id"],
-
-            "perfil_nome": user["perfil_nome"],
-
-            "admin_level": user["admin_level"],
-
-            "perfil_sistema": (
-                user["perfil_sistema"]
-            ),
-
-            "ativo": user["ativo"],
-
-            "perfil_ativo": (
-                user["perfil_ativo"]
-            ),
+            "usuario": usuario,
 
             "bloqueado": False,
 
-            "ultimo_login": (
-                user["ultimo_login"]
-            ),
-
-            "senha_migrada": (
-                user["senha_migrada"]
-            ),
+            "senha_expirada": expirada,
 
             "trocar_senha": (
 
-                user["deve_trocar"]
+                usuario["deve_trocar"]
 
                 or
 
-                user["senha_temporaria"]
+                usuario["senha_temporaria"]
             ),
 
-            "senha_expirada": expirada,
+            "is_root": is_root(usuario),
 
-            "is_root": is_root(user),
-
-            "is_admin": is_admin(user),
-
-            "auth_method": metodo
+            "is_admin": is_admin(usuario)
         }
 
     except Exception:
 
+        if conn:
+            conn.rollback()
+
+        LOGGER.exception(
+            "AUTH ERROR"
+        )
+
+        raise
+
+    finally:
+
         try:
 
             if conn:
-                conn.rollback()
+                conn.close()
 
         except Exception:
             pass
 
-        logging.exception(
-            "AUTH ERROR"
+
+# ==================================================
+# ALTERAR SENHA
+# ==================================================
+
+def alterar_senha(
+
+    usuario_id,
+
+    nova_senha
+):
+
+    conn = None
+
+    try:
+
+        nova_senha = str(
+            nova_senha or ""
+        ).strip()
+
+        if not nova_senha:
+
+            return False
+
+        conn = get_connection()
+
+        cursor = conn.cursor()
+
+        novo_hash = gerar_hash(
+            nova_senha
         )
+
+        cursor.execute("""
+
+            UPDATE Usuarios
+
+            SET
+
+                SenhaHash = ?,
+
+                DeveTrocarSenha = 0,
+
+                SenhaTemporaria = 0,
+
+                TentativasLogin = 0,
+
+                Bloqueado = 0,
+
+                BloqueadoAte = NULL,
+
+                NivelBloqueio = 0,
+
+                BloqueioTotal = 0,
+
+                DataUltimaTrocaSenha = GETDATE()
+
+            WHERE Id = ?
+
+        """, (
+
+            novo_hash,
+
+            usuario_id
+        ))
+
+        conn.commit()
 
         auditoria_segura(
 
-            login=login,
+            usuario_id=usuario_id,
 
-            acao="AUTH_ERROR",
+            acao="ALTERAR_SENHA",
 
-            entidade="Usuarios"
+            entidade="Usuarios",
+
+            registro_id=usuario_id
         )
 
-        return retorno_falha()
+        return True
+
+    except Exception:
+
+        if conn:
+            conn.rollback()
+
+        LOGGER.exception(
+            "ALTER PASSWORD ERROR"
+        )
+
+        return False
 
     finally:
 

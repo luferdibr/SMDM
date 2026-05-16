@@ -1,14 +1,19 @@
 
 import logging
-import traceback
-from datetime import datetime
 
 import flet as ft
 
-from ui.login import login_view
+from config.settings import (
+    APP_CONFIG,
+    DB_CONFIG
+)
 
 from services.install_service import (
     garantir_instalacao
+)
+
+from services.migration_service import (
+    executar_migracoes
 )
 
 from services.bootstrap_service import (
@@ -16,356 +21,131 @@ from services.bootstrap_service import (
 )
 
 from services.auditoria_service import (
-    registrar_evento,
-    registrar_erro
+    registrar_evento
 )
 
-from config.settings import (
-
-    APP_NAME,
-
-    APP_VERSION
+from ui.login import (
+    login_view
 )
 
 
 # ==================================================
-# LOGGER CENTRAL
+# LOGGER
 # ==================================================
 
-LOGGER = logging.getLogger("SMMPV")
+logging.basicConfig(
 
+    level=logging.INFO,
 
-def configurar_logging():
-
-    if LOGGER.handlers:
-        return
-
-    LOGGER.setLevel(logging.INFO)
-
-    formatter = logging.Formatter(
-
-        (
-            "%(asctime)s "
-            "[%(levelname)s] "
-            "%(message)s"
-        )
+    format=(
+        "%(asctime)s "
+        "[%(levelname)s] "
+        "%(message)s"
     )
+)
 
-    console = logging.StreamHandler()
-
-    console.setFormatter(formatter)
-
-    LOGGER.addHandler(console)
+LOGGER = logging.getLogger(
+    "MDM_MAIN"
+)
 
 
 # ==================================================
 # HELPERS
 # ==================================================
 
-def limpar_page(page):
+def auditoria_segura(**kwargs):
 
     try:
 
-        page.clean()
+        registrar_evento(**kwargs)
 
     except Exception:
 
         LOGGER.exception(
-            "PAGE CLEAN ERROR"
+            "AUDITORIA ERROR"
         )
 
 
-def mostrar_erro(
+# ==================================================
+# ERRO FATAL
+# ==================================================
+
+def exibir_erro_fatal(
     page,
-    titulo,
-    mensagem
-):
-
-    limpar_page(page)
-
-    page.add(
-
-        ft.Container(
-
-            content=ft.Column([
-
-                ft.Icon(
-
-                    ft.Icons.ERROR,
-
-                    size=90,
-
-                    color=ft.Colors.RED
-                ),
-
-                ft.Text(
-
-                    titulo,
-
-                    size=28,
-
-                    weight="bold",
-
-                    color=ft.Colors.RED
-                ),
-
-                ft.Container(
-
-                    content=ft.Text(
-
-                        str(mensagem),
-
-                        selectable=True,
-
-                        size=15
-                    ),
-
-                    padding=15,
-
-                    border_radius=10,
-
-                    bgcolor=ft.Colors.RED_50
-                )
-
-            ],
-
-                spacing=20,
-
-                horizontal_alignment=(
-                    ft.CrossAxisAlignment.CENTER
-                )
-            ),
-
-            expand=True,
-
-            alignment=ft.Alignment(0, 0),
-
-            padding=30
-        )
-    )
-
-    page.update()
-
-
-def mostrar_loading(
-    page,
-    titulo,
-    mensagem
-):
-
-    limpar_page(page)
-
-    page.add(
-
-        ft.Container(
-
-            content=ft.Column([
-
-                ft.ProgressRing(),
-
-                ft.Text(
-
-                    titulo,
-
-                    size=24,
-
-                    weight="bold"
-                ),
-
-                ft.Text(
-                    mensagem,
-                    size=15
-                )
-
-            ],
-
-                spacing=20,
-
-                horizontal_alignment=(
-                    ft.CrossAxisAlignment.CENTER
-                )
-            ),
-
-            alignment=ft.Alignment(0, 0),
-
-            expand=True
-        )
-    )
-
-    page.update()
-
-
-# ==================================================
-# PAGE CONFIG
-# ==================================================
-
-def configurar_pagina(page: ft.Page):
-
-    page.title = (
-        f"{APP_NAME} "
-        f"{APP_VERSION}"
-    )
-
-    # ==============================================
-    # THEME
-    # ==============================================
-
-    page.theme_mode = ft.ThemeMode.LIGHT
-
-    page.theme = ft.Theme(
-
-        color_scheme_seed=ft.Colors.BLUE
-    )
-
-    page.bgcolor = ft.Colors.GREY_100
-
-    # ==============================================
-    # LAYOUT
-    # ==============================================
-
-    page.padding = 0
-
-    page.spacing = 0
-
-    page.scroll = ft.ScrollMode.AUTO
-
-    page.horizontal_alignment = (
-        ft.CrossAxisAlignment.START
-    )
-
-    page.vertical_alignment = (
-        ft.MainAxisAlignment.START
-    )
-
-    # ==============================================
-    # WINDOW
-    # ==============================================
-
-    page.window_width = 1440
-
-    page.window_height = 920
-
-    page.window_min_width = 1200
-
-    page.window_min_height = 700
-
-    # ==============================================
-    # APP STATE
-    # ==============================================
-
-    page.usuario_logado = None
-
-    page.menu_cache = None
-
-    page.rota_atual = None
-
-    page.conteudo = None
-
-    page.app_inicializada = False
-
-    page.app_bootstrap = False
-
-    page.start_time = datetime.now()
-
-    # ==============================================
-    # LIMPAR
-    # ==============================================
-
-    limpar_page(page)
-
-
-# ==================================================
-# FECHAR APP
-# ==================================================
-
-def fechar_aplicacao(page):
-
-    try:
-
-        LOGGER.info(
-            "Encerrando aplicação..."
-        )
-
-        # ==========================================
-        # LIMPAR ESTADO
-        # ==========================================
-
-        page.usuario_logado = None
-
-        page.menu_cache = None
-
-        page.rota_atual = None
-
-        page.conteudo = None
-
-        # ==========================================
-        # FECHAR
-        # ==========================================
-
-        page.window.close()
-
-    except Exception:
-
-        LOGGER.exception(
-            "APP CLOSE ERROR"
-        )
-
-
-# ==================================================
-# ERROR HANDLER
-# ==================================================
-
-def tratar_erro_global(
-    page,
-    erro,
-    contexto="APP"
+    erro
 ):
 
     LOGGER.exception(
-        f"GLOBAL ERROR {contexto}"
+        "FATAL STARTUP ERROR"
     )
 
-    try:
+    page.clean()
 
-        registrar_erro(
+    page.add(
 
-            erro,
+        ft.Container(
 
-            modulo=contexto
-        )
+            expand=True,
 
-    except Exception:
-        pass
+            bgcolor=ft.Colors.RED_50,
 
-    mostrar_erro(
+            alignment=(
+                ft.Alignment(0, 0)
+            ),
 
-        page,
+            content=ft.Column(
 
-        "Erro interno do sistema",
+                [
 
-        (
-            f"{erro}\n\n"
-            f"{traceback.format_exc()}"
+                    ft.Icon(
+
+                        ft.Icons.ERROR,
+
+                        size=90,
+
+                        color=ft.Colors.RED
+                    ),
+
+                    ft.Text(
+
+                        "Erro fatal na aplicação",
+
+                        size=28,
+
+                        weight="bold",
+
+                        color=ft.Colors.RED
+                    ),
+
+                    ft.Text(
+
+                        str(erro),
+
+                        size=15
+                    )
+
+                ],
+
+                spacing=20,
+
+                horizontal_alignment=(
+                    ft.CrossAxisAlignment.CENTER
+                )
+            )
         )
     )
+
+    page.update()
 
 
 # ==================================================
-# STARTUP INSTALL
+# STARTUP
 # ==================================================
 
-def startup_instalacao(page):
+def startup_install():
 
-    mostrar_loading(
-
-        page,
-
-        "Validando instalação",
-
-        (
-            "Preparando estrutura "
-            "do banco de dados..."
-        )
+    LOGGER.info(
+        "Validando instalação..."
     )
 
     garantir_instalacao()
@@ -375,22 +155,23 @@ def startup_instalacao(page):
     )
 
 
-# ==================================================
-# STARTUP BOOTSTRAP
-# ==================================================
+def startup_migrations():
 
-def startup_bootstrap(page):
+    LOGGER.info(
+        "Executando migrations..."
+    )
 
-    mostrar_loading(
+    executar_migracoes()
 
-        page,
+    LOGGER.info(
+        "Migrations concluídas."
+    )
 
-        "Inicializando sistema",
 
-        (
-            "Carregando serviços "
-            "principais..."
-        )
+def startup_bootstrap():
+
+    LOGGER.info(
+        "Inicializando bootstrap..."
     )
 
     iniciar_sistema()
@@ -401,114 +182,40 @@ def startup_bootstrap(page):
 
 
 # ==================================================
-# STARTUP LOGIN
+# APP
 # ==================================================
 
-def startup_login(page):
-
-    mostrar_loading(
-
-        page,
-
-        "Carregando login",
-
-        (
-            "Inicializando "
-            "interface..."
-        )
-    )
-
-    limpar_page(page)
-
-    page.add(
-        login_view(page)
-    )
-
-    page.update()
-
-
-# ==================================================
-# MAIN
-# ==================================================
-
-def main(page: ft.Page):
+def inicializar_sistema(page):
 
     LOGGER.info(
         "Inicializando aplicação."
     )
 
-    try:
+    startup_install()
 
-        # ==========================================
-        # CONFIG
-        # ==========================================
+    startup_migrations()
 
-        configurar_pagina(page)
+    startup_bootstrap()
 
-        # ==========================================
-        # INSTALL
-        # ==========================================
+    auditoria_segura(
 
-        startup_instalacao(page)
+        login="SYSTEM",
 
-        # ==========================================
-        # BOOTSTRAP
-        # ==========================================
+        acao="SYSTEM_BOOT",
 
-        startup_bootstrap(page)
+        entidade="SYSTEM"
+    )
 
-        # ==========================================
-        # LOGIN
-        # ==========================================
-
-        startup_login(page)
-
-        # ==========================================
-        # STATE
-        # ==========================================
-
-        page.app_inicializada = True
-
-        page.app_bootstrap = True
-
-        # ==========================================
-        # AUDITORIA
-        # ==========================================
-
-        registrar_evento(
-
-            evento="SYSTEM_BOOT",
-
-            descricao=(
-                "Sistema inicializado."
-            ),
-
-            modulo="main"
-        )
-
-        LOGGER.info(
-            "Aplicação pronta."
-        )
-
-    except Exception as ex:
-
-        tratar_erro_global(
-
-            page,
-
-            ex,
-
-            contexto="MAIN"
-        )
+    LOGGER.info(
+        "Aplicação pronta."
+    )
 
 
 # ==================================================
-# STARTUP
+# MAIN VIEW
 # ==================================================
 
-if __name__ == "__main__":
-
-    configurar_logging()
+def main(page: ft.Page):
 
     try:
 
@@ -516,30 +223,102 @@ if __name__ == "__main__":
             "Iniciando aplicação..."
         )
 
-        ft.run(main)
+        # ==========================================
+        # PAGE
+        # ==========================================
 
-    except KeyboardInterrupt:
+        page.title = APP_CONFIG[
+            "name"
+        ]
+
+        page.theme_mode = (
+            ft.ThemeMode.LIGHT
+        )
+
+        page.window.width = 1280
+
+        page.window.height = 850
+
+        page.window.min_width = 1000
+
+        page.window.min_height = 700
+
+        page.padding = 0
+
+        page.spacing = 0
+
+        page.bgcolor = (
+            ft.Colors.GREY_100
+        )
+
+        page.scroll = (
+            ft.ScrollMode.AUTO
+        )
+
+        page.vertical_alignment = (
+            ft.MainAxisAlignment.START
+        )
+
+        page.horizontal_alignment = (
+            ft.CrossAxisAlignment.START
+        )
+
+        # ==========================================
+        # LOGS
+        # ==========================================
 
         LOGGER.info(
-            "Aplicação encerrada."
+
+            f"Ambiente: "
+            f"{APP_CONFIG['environment']}"
         )
+
+        LOGGER.info(
+
+            f"Aplicação: "
+            f"{APP_CONFIG['name']}"
+        )
+
+        LOGGER.info(
+
+            f"SQL Server: "
+            f"{DB_CONFIG['server']}"
+        )
+
+        # ==========================================
+        # STARTUP
+        # ==========================================
+
+        inicializar_sistema(page)
+
+        # ==========================================
+        # LOGIN
+        # ==========================================
+
+        page.clean()
+
+        page.add(
+            login_view(page)
+        )
+
+        page.update()
 
     except Exception as ex:
 
-        LOGGER.exception(
-            "FATAL APP ERROR"
+        exibir_erro_fatal(
+            page,
+            ex
         )
 
-        try:
 
-            registrar_erro(
+# ==================================================
+# RUN
+# ==================================================
 
-                ex,
+if __name__ == "__main__":
 
-                modulo="startup"
-            )
+    LOGGER.info(
+        "Inicializando aplicação..."
+    )
 
-        except Exception:
-            pass
-
-        raise
+    ft.run(main)
