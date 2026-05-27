@@ -1,0 +1,281 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>917c8176-eb22-4fa7-9bea-c0706470a911</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>main.py</StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>SMDM</Name>
+    <RootNamespace>SMDM</RootNamespace>
+    <IsWindowsApplication>False</IsWindowsApplication>
+    <InterpreterId>Global|PythonCore|3.12</InterpreterId>
+    <TestFramework>Pytest</TestFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="__init__.py" />
+    <Compile Include="backup\__init__.py" />
+    <Compile Include="config\settings.py" />
+    <Compile Include="config\__init__.py" />
+    <Compile Include="core\app_config.py" />
+    <Compile Include="core\config\__init__.py" />
+    <Compile Include="core\constants\__init__.py" />
+    <Compile Include="core\constants_ui.py" />
+    <Compile Include="core\exceptions\__init__.py" />
+    <Compile Include="core\flet_compat.py" />
+    <Compile Include="core\helpers\__init__.py" />
+    <Compile Include="core\icons.py" />
+    <Compile Include="core\logging\__init__.py" />
+    <Compile Include="core\menu_constants.py" />
+    <Compile Include="core\messages.py" />
+    <Compile Include="core\security\__init__.py" />
+    <Compile Include="security\session_service.py" />
+    <Compile Include="core\state\state.py" />
+    <Compile Include="core\state\__init__.py" />
+    <Compile Include="core\themes.py" />
+    <Compile Include="core\version.py" />
+    <Compile Include="core\__init__.py" />
+    <Compile Include="database\connection.py" />
+    <Compile Include="database\recover_root.py" />
+    <Compile Include="database\setup_temp.py" />
+    <Compile Include="database\test_connection.py" />
+    <Compile Include="database\__init__.py" />
+    <Compile Include="export\__init__.py" />
+    <Compile Include="logs\__init__.py" />
+    <Compile Include="main.py" />
+    <Compile Include="security\password_service.py" />
+    <Compile Include="services\auditoria_service.py" />
+    <Compile Include="security\auth_service.py" />
+    <Compile Include="services\bootstrap_service.py" />
+    <Compile Include="services\documento_service.py" />
+    <Compile Include="services\endereco_service.py" />
+    <Compile Include="services\install_service.py" />
+    <Compile Include="services\identity_service.py" />
+    <Compile Include="services\local_service.py" />
+    <Compile Include="services\local_pesquisa_web_service.py" />
+    <Compile Include="services\loc_ambientes_service.py" />
+    <Compile Include="services\loc_estrutura_service.py" />
+    <Compile Include="services\loc_tipo_service.py" />
+    <Compile Include="services\menu_admin_service.py" />
+    <Compile Include="services\menu_editor_service.py" />
+    <Compile Include="modules\administracao\menus\services\menu_service.py" />
+    <Compile Include="modules\administracao\menus\services\menu_tree_service.py" />
+    <Compile Include="modules\__init__.py" />
+    <Compile Include="modules\administracao\__init__.py" />
+    <Compile Include="modules\administracao\menus\__init__.py" />
+    <Compile Include="modules\administracao\menus\models\__init__.py" />
+    <Compile Include="modules\administracao\menus\repositories\__init__.py" />
+    <Compile Include="modules\administracao\menus\services\__init__.py" />
+    <Compile Include="modules\administracao\menus\ui\__init__.py" />
+    <Compile Include="modules\administracao\menus\validators\__init__.py" />
+    <Compile Include="modules\administracao\perfil_menu\__init__.py" />
+    <Compile Include="modules\administracao\perfil_menu\ui.py" />
+    <Compile Include="modules\cadastros\__init__.py" />
+    <Compile Include="modules\cadastros\atores\__init__.py" />
+    <Compile Include="modules\cadastros\atores\service.py" />
+    <Compile Include="modules\cadastros\atores\ui.py" />
+    <Compile Include="modules\cadastros\clientes\__init__.py" />
+    <Compile Include="modules\cadastros\clientes\service.py" />
+    <Compile Include="modules\cadastros\clientes\ui.py" />
+    <Compile Include="modules\cadastros\empresas\__init__.py" />
+    <Compile Include="modules\cadastros\empresas\service.py" />
+    <Compile Include="modules\cadastros\empresas\ui.py" />
+    <Compile Include="modules\cadastros\figurinos\__init__.py" />
+    <Compile Include="modules\cadastros\figurinos\service.py" />
+    <Compile Include="modules\cadastros\figurinos\ui.py" />
+    <Compile Include="modules\cadastros\sedes\__init__.py" />
+    <Compile Include="modules\cadastros\sedes\service.py" />
+    <Compile Include="modules\cadastros\sedes\ui.py" />
+    <Compile Include="services\migration_service.py" />
+    <Compile Include="modules\administracao\perfis\__init__.py" />
+    <Compile Include="modules\administracao\perfis\models\__init__.py" />
+    <Compile Include="modules\administracao\perfis\repositories\__init__.py" />
+    <Compile Include="modules\administracao\perfis\services\perfil_service.py" />
+    <Compile Include="modules\administracao\perfis\services\__init__.py" />
+    <Compile Include="modules\administracao\perfis\ui\__init__.py" />
+    <Compile Include="modules\administracao\perfis\validators\__init__.py" />
+    <Compile Include="modules\administracao\usuarios\__init__.py" />
+    <Compile Include="modules\administracao\usuarios\models\__init__.py" />
+    <Compile Include="modules\administracao\usuarios\repositories\__init__.py" />
+    <Compile Include="security\security_service.py" />
+    <Compile Include="modules\administracao\usuarios\services\user_service.py" />
+    <Compile Include="modules\administracao\usuarios\services\__init__.py" />
+    <Compile Include="modules\administracao\usuarios\ui\__init__.py" />
+    <Compile Include="modules\administracao\usuarios\validators\__init__.py" />
+    <Compile Include="modules\eventos\__init__.py" />
+    <Compile Include="modules\eventos\agenda\__init__.py" />
+    <Compile Include="modules\eventos\orcamentos\__init__.py" />
+    <Compile Include="modules\locais\__init__.py" />
+    <Compile Include="modules\locais\ambientes\__init__.py" />
+    <Compile Include="modules\locais\estruturas\__init__.py" />
+    <Compile Include="modules\locais\locais\__init__.py" />
+    <Compile Include="modules\locais\tipos\__init__.py" />
+    <Compile Include="services\navigation_service.py" />
+    <Compile Include="services\orcamento_distancia_service.py" />
+    <Compile Include="services\pesquisa_service.py" />
+    <Compile Include="services\__init__.py" />
+    <Compile Include="security\__init__.py" />
+    <Compile Include="services\auth\__init__.py" />
+    <Compile Include="services\menu\__init__.py" />
+    <Compile Include="services\permissions\__init__.py" />
+    <Compile Include="services\session\__init__.py" />
+    <Compile Include="shared\__init__.py" />
+    <Compile Include="shared\adapters\__init__.py" />
+    <Compile Include="shared\cache\__init__.py" />
+    <Compile Include="shared\db\__init__.py" />
+    <Compile Include="shared\formatters\__init__.py" />
+    <Compile Include="shared\services\__init__.py" />
+    <Compile Include="shared\ui\__init__.py" />
+    <Compile Include="shared\utils\__init__.py" />
+    <Compile Include="shared\validators\__init__.py" />
+    <Compile Include="temp\__init__.py" />
+    <Compile Include="tests\__init__.py" />
+    <Compile Include="SMDM.py" />
+    <Compile Include="ui\alterar_senha.py" />
+    <Compile Include="ui\auditoria.py" />
+    <Compile Include="ui\assets\__init__.py" />
+    <Compile Include="ui\components\animations.py" />
+    <Compile Include="ui\components\base_view.py" />
+    <Compile Include="ui\components\buttons.py" />
+    <Compile Include="ui\components\cards.py" />
+    <Compile Include="ui\components\dialogs.py" />
+    <Compile Include="ui\components\endereco_dialog.py" />
+    <Compile Include="ui\components\fields.py" />
+    <Compile Include="ui\components\forms.py" />
+    <Compile Include="ui\components\headers.py" />
+    <Compile Include="ui\components\layouts.py" />
+    <Compile Include="ui\components\loading.py" />
+    <Compile Include="ui\components\navigation.py" />
+    <Compile Include="ui\components\notifications.py" />
+    <Compile Include="ui\components\permissions.py" />
+    <Compile Include="ui\components\snackbars.py" />
+    <Compile Include="ui\components\tables.py" />
+    <Compile Include="ui\components\validators.py" />
+    <Compile Include="ui\components\__init__.py" />
+    <Compile Include="ui\dashboard.py" />
+    <Compile Include="ui\layouts\__init__.py" />
+    <Compile Include="ui\locais.py" />
+    <Compile Include="ui\local_form.py" />
+    <Compile Include="ui\loc_ambientes.py" />
+    <Compile Include="ui\loc_estruturas.py" />
+    <Compile Include="ui\loc_pesquisa_web.py" />
+    <Compile Include="ui\loc_tipos.py" />
+    <Compile Include="ui\login.py" />
+    <Compile Include="ui\main_layout.py" />
+    <Compile Include="modules\administracao\menus\ui\menu_admin.py" />
+    <Compile Include="modules\administracao\menus\ui\menu_editor.py" />
+    <Compile Include="modules\administracao\perfis\ui\perfis.py" />
+    <Compile Include="ui\themes.py" />
+    <Compile Include="modules\administracao\menus\ui\usuarios.py" />
+    <Compile Include="ui\themes\__init__.py" />
+    <Compile Include="ui\__init__.py" />
+    <Compile Include="utils\error_formatter.py" />
+    <Compile Include="utils\gerar_hash.py" />
+    <Compile Include="utils\__init__.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="backup\" />
+    <Folder Include="config\" />
+    <Folder Include="core\" />
+    <Folder Include="core\config\" />
+    <Folder Include="core\constants\" />
+    <Folder Include="core\exceptions\" />
+    <Folder Include="core\helpers\" />
+    <Folder Include="core\logging\" />
+    <Folder Include="core\security\" />
+    <Folder Include="core\state\" />
+    <Folder Include="database\" />
+    <Folder Include="docs\" />
+    <Folder Include="export\" />
+    <Folder Include="logs\" />
+    <Folder Include="modules\" />
+    <Folder Include="modules\administracao\" />
+    <Folder Include="modules\administracao\menus\" />
+    <Folder Include="modules\administracao\menus\models\" />
+    <Folder Include="modules\administracao\menus\repositories\" />
+    <Folder Include="modules\administracao\menus\services\" />
+    <Folder Include="modules\administracao\menus\ui\" />
+    <Folder Include="modules\administracao\menus\validators\" />
+    <Folder Include="modules\administracao\perfil_menu\" />
+    <Folder Include="modules\administracao\perfis\" />
+    <Folder Include="modules\administracao\perfis\models\" />
+    <Folder Include="modules\administracao\perfis\repositories\" />
+    <Folder Include="modules\administracao\perfis\services\" />
+    <Folder Include="modules\administracao\perfis\ui\" />
+    <Folder Include="modules\administracao\perfis\validators\" />
+    <Folder Include="modules\administracao\usuarios\" />
+    <Folder Include="modules\administracao\usuarios\models\" />
+    <Folder Include="modules\administracao\usuarios\repositories\" />
+    <Folder Include="modules\administracao\usuarios\services\" />
+    <Folder Include="modules\administracao\usuarios\ui\" />
+    <Folder Include="modules\administracao\usuarios\validators\" />
+    <Folder Include="modules\cadastros\" />
+    <Folder Include="modules\cadastros\atores\" />
+    <Folder Include="modules\cadastros\clientes\" />
+    <Folder Include="modules\cadastros\empresas\" />
+    <Folder Include="modules\cadastros\figurinos\" />
+    <Folder Include="modules\cadastros\sedes\" />
+    <Folder Include="modules\eventos\" />
+    <Folder Include="modules\eventos\agenda\" />
+    <Folder Include="modules\eventos\orcamentos\" />
+    <Folder Include="modules\locais\" />
+    <Folder Include="modules\locais\ambientes\" />
+    <Folder Include="modules\locais\estruturas\" />
+    <Folder Include="modules\locais\locais\" />
+    <Folder Include="modules\locais\tipos\" />
+    <Folder Include="security\" />
+    <Folder Include="services\" />
+    <Folder Include="services\auth\" />
+    <Folder Include="services\menu\" />
+    <Folder Include="services\permissions\" />
+    <Folder Include="services\session\" />
+    <Folder Include="shared\" />
+    <Folder Include="shared\adapters\" />
+    <Folder Include="shared\cache\" />
+    <Folder Include="shared\db\" />
+    <Folder Include="shared\formatters\" />
+    <Folder Include="shared\services\" />
+    <Folder Include="shared\ui\" />
+    <Folder Include="shared\utils\" />
+    <Folder Include="shared\validators\" />
+    <Folder Include="temp\" />
+    <Folder Include="tests\" />
+    <Folder Include="ui\" />
+    <Folder Include="ui\assets\" />
+    <Folder Include="ui\components\" />
+    <Folder Include="ui\layouts\" />
+    <Folder Include="ui\themes\" />
+    <Folder Include="utils\" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="Global|PythonCore|3.12" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include=".env" />
+    <Content Include="config\graus_relacionamento.json" />
+    <Content Include="config\initial_data.json" />
+    <Content Include="config\local_tipos.json" />
+    <Content Include="docs\regras_negocio.md" />
+    <Content Include="requirements.txt" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <!-- Uncomment the CoreCompile target to enable the Build command in
+       Visual Studio and specify your pre- and post-build commands in
+       the BeforeBuild and AfterBuild targets below. -->
+  <!--<Target Name="CoreCompile" />-->
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+</Project>

@@ -1,0 +1,18 @@
+{
+  "graus": [
+    {"codigo": "FILHO","nome": "Filho","descricao": "Criança em relação ao pai"},
+    {"codigo": "FILHA","nome": "Filha","descricao": "Criança em relação à mãe"},
+    {"codigo": "ENTEADO","nome": "Enteado","descricao": "Criança em relação ao padrasto/madrasta"},
+    {"codigo": "NETO","nome": "Neto","descricao": "Criança em relação ao avô/avó"},
+    {"codigo": "NETA","nome": "Neta","descricao": "Criança em relação ao avô/avó"},
+    {"codigo": "SOBRINHO","nome": "Sobrinho","descricao": "Criança em relação ao tio/tia"},
+    {"codigo": "SOBRINHA","nome": "Sobrinha","descricao": "Criança em relação ao tio/tia"},
+    {"codigo": "IRMAO_MENOR","nome": "Irmão menor","descricao": "Criança em relação ao irmão/irmã maior"},
+    {"codigo": "TUTELADO","nome": "Tutelado","descricao": "Criança em relação ao tutor"},
+    {"codigo": "GUARDADO","nome": "Guardado","descricao": "Criança sob guarda legal"},
+    {"codigo": "CURATELADO","nome": "Curatelado","descricao": "Criança sob curatela"},
+    {"codigo": "ADOTADO","nome": "Adotado","descricao": "Criança em relação ao adotante"},
+    {"codigo": "DEPENDENTE","nome": "Dependente","descricao": "Criança dependente do adulto"},
+    {"codigo": "OUTRO","nome": "Outro","descricao": "Relação não classificada"}
+  ]
+}

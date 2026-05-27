@@ -1,0 +1,85 @@
+{
+  "_observacoes": [
+    "Tipos de local de evento carregados pela rotina de instalacao.",
+    "Edite esta lista para acrescentar novos formatos de local.",
+    "O campo nome e implantado na tabela LocTipo quando ainda nao existir."
+  ],
+  "tipos": [
+    {
+      "nome": "Não informado",
+      "categoria": "Sistema"
+    },
+    {
+      "nome": "Centro de Convenções",
+      "categoria": "Corporativo e Acadêmico"
+    },
+    {
+      "nome": "Auditório",
+      "categoria": "Corporativo e Acadêmico"
+    },
+    {
+      "nome": "Teatro",
+      "categoria": "Corporativo e Acadêmico"
+    },
+    {
+      "nome": "Sala de Treinamento",
+      "categoria": "Corporativo e Acadêmico"
+    },
+    {
+      "nome": "Coworking",
+      "categoria": "Corporativo e Acadêmico"
+    },
+    {
+      "nome": "Espaço de Festas",
+      "categoria": "Sociais e Festas"
+    },
+    {
+      "nome": "Residência",
+      "categoria": "Sociais e Festas"
+    },
+    {
+      "nome": "Salão de Festas de Condomínio",
+      "categoria": "Sociais e Festas"
+    },
+    {
+      "nome": "Sítio",
+      "categoria": "Sociais e Festas"
+    },
+    {
+      "nome": "Rooftop",
+      "categoria": "Sociais e Festas"
+    },
+    {
+      "nome": "Espaço VIP",
+      "categoria": "Sociais e Festas"
+    },
+    {
+      "nome": "Local Histórico",
+      "categoria": "Esportivos e Culturais"
+    },
+    {
+      "nome": "Museu",
+      "categoria": "Esportivos e Culturais"
+    },
+    {
+      "nome": "Arena",
+      "categoria": "Esportivos e Culturais"
+    },
+    {
+      "nome": "Estádio",
+      "categoria": "Esportivos e Culturais"
+    },
+    {
+      "nome": "Hotel",
+      "categoria": "Locais Híbridos e Alternativos"
+    },
+    {
+      "nome": "Estúdio",
+      "categoria": "Locais Híbridos e Alternativos"
+    },
+    {
+      "nome": "Espaço Virtual",
+      "categoria": "Locais Híbridos e Alternativos"
+    }
+  ]
+}

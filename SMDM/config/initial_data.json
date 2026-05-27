@@ -1,0 +1,428 @@
+{
+  "_observacoes": [
+    "Arquivo de conteudo inicial usado pela rotina de instalacao.",
+    "Toda tela de atualizacao/cadastro deve ter sua tabela equivalente criada no install_service.py.",
+    "Quando a tela depender de registros-base para funcionar, incluir o conteudo inicial neste arquivo.",
+    "Senhas nao devem ser gravadas aqui; use senha_env apontando para variaveis do .env."
+  ],
+  "perfis": [
+    {
+      "nome": "ROOT",
+      "admin_level": 100,
+      "sistema": true,
+      "validade_senha_dias": null
+    },
+    {
+      "nome": "ADMIN",
+      "admin_level": 50,
+      "sistema": true,
+      "validade_senha_dias": 90
+    },
+    {
+      "nome": "OPERADOR",
+      "admin_level": 10,
+      "sistema": false,
+      "validade_senha_dias": 90
+    }
+  ],
+  "usuarios": [
+    {
+      "login_env": "ADMIN_ROOT_LOGIN",
+      "nome_env": "ADMIN_ROOT_NOME",
+      "senha_env": "ADMIN_ROOT_PASSWORD",
+      "perfil": "ROOT",
+      "deve_trocar_senha": false
+    },
+    {
+      "login_env": "ADMIN_LOGIN",
+      "nome_env": "ADMIN_NOME",
+      "senha_env": "ADMIN_PASSWORD",
+      "perfil": "ADMIN",
+      "deve_trocar_senha": true
+    }
+  ],
+  "menus": [
+    {
+      "key": "dashboard",
+      "id": 1,
+      "nome": "Dashboard",
+      "rota": "dashboard",
+      "tipo": "S",
+      "pai": null,
+      "ordem": 1,
+      "icone": "DASHBOARD",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "administrativo",
+      "id": 20,
+      "nome": "Administrativo",
+      "rota": "",
+      "tipo": "T",
+      "pai": null,
+      "ordem": 2,
+      "icone": "BUSINESS_CENTER",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "locais",
+      "id": 101,
+      "nome": "Locais de Eventos",
+      "rota": "",
+      "tipo": "M",
+      "pai": "administrativo",
+      "ordem": 1,
+      "icone": "LOCATION_CITY",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "cadastro_locais",
+      "id": 201,
+      "nome": "Cadastro de Locais",
+      "rota": "locais",
+      "tipo": "S",
+      "pai": "locais",
+      "ordem": 1,
+      "icone": "HOME_WORK",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "loc_tipos",
+      "id": 203,
+      "nome": "Tipos de Local",
+      "rota": "loc_tipos",
+      "tipo": "S",
+      "pai": "locais",
+      "ordem": 2,
+      "icone": "CATEGORY",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "loc_pesquisa_web",
+      "id": null,
+      "nome": "Pesquisa Web",
+      "rota": "loc_pesquisa_web",
+      "tipo": "S",
+      "pai": "locais",
+      "ordem": 3,
+      "icone": "SEARCH",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "loc_pesquisa_web_edicao",
+      "id": null,
+      "nome": "Editar Pesquisados",
+      "rota": "loc_pesquisa_web_edicao",
+      "tipo": "S",
+      "pai": "locais",
+      "ordem": 4,
+      "icone": "EDIT_NOTE",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "loc_pesquisa_web_transferencia",
+      "id": null,
+      "nome": "Transferir Pesquisados",
+      "rota": "loc_pesquisa_web_transferencia",
+      "tipo": "S",
+      "pai": "locais",
+      "ordem": 5,
+      "icone": "DRIVE_FILE_MOVE",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "profissionais",
+      "id": null,
+      "nome": "Profissionais",
+      "rota": "",
+      "tipo": "M",
+      "pai": "administrativo",
+      "ordem": 2,
+      "icone": "BADGE",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "atores",
+      "id": null,
+      "nome": "Atores",
+      "rota": "atores",
+      "tipo": "S",
+      "pai": "profissionais",
+      "ordem": 1,
+      "icone": "THEATER_COMEDY",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "figurinos",
+      "id": null,
+      "nome": "Figurinos",
+      "rota": "figurinos",
+      "tipo": "S",
+      "pai": "profissionais",
+      "ordem": 2,
+      "icone": "CHECKROOM",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "clientes",
+      "id": null,
+      "nome": "Clientes",
+      "rota": "clientes",
+      "tipo": "S",
+      "pai": "administrativo",
+      "ordem": 3,
+      "icone": "CONTACT_PAGE",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "empresas",
+      "id": null,
+      "nome": "Empresas",
+      "rota": "empresas",
+      "tipo": "S",
+      "pai": "administrativo",
+      "ordem": 4,
+      "icone": "BUSINESS",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "sedes_empresa",
+      "id": null,
+      "nome": "Sedes",
+      "rota": "sedes_empresa",
+      "tipo": "S",
+      "pai": "administrativo",
+      "ordem": 5,
+      "icone": "LOCATION_ON",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "eventos",
+      "id": 22,
+      "nome": "Eventos",
+      "rota": "",
+      "tipo": "M",
+      "pai": "administrativo",
+      "ordem": 6,
+      "icone": "EVENT",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "agenda",
+      "id": 205,
+      "nome": "Agenda",
+      "rota": "agenda",
+      "tipo": "S",
+      "pai": "eventos",
+      "ordem": 1,
+      "icone": "CALENDAR_MONTH",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "orcamentos",
+      "id": 206,
+      "nome": "Orçamentos",
+      "rota": "orcamentos",
+      "tipo": "S",
+      "pai": "eventos",
+      "ordem": 2,
+      "icone": "REQUEST_QUOTE",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "financeiro",
+      "id": null,
+      "nome": "Financeiro",
+      "rota": "",
+      "tipo": "T",
+      "pai": null,
+      "ordem": 3,
+      "icone": "ACCOUNT_BALANCE",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "marketing",
+      "id": null,
+      "nome": "Marketing",
+      "rota": "",
+      "tipo": "T",
+      "pai": null,
+      "ordem": 4,
+      "icone": "CAMPAIGN",
+      "admin_level": 10,
+      "sistema": true
+    },
+    {
+      "key": "servicos",
+      "id": 30,
+      "nome": "Serviços",
+      "rota": "",
+      "tipo": "T",
+      "pai": null,
+      "ordem": 5,
+      "icone": "MISCELLANEOUS_SERVICES",
+      "admin_level": 50,
+      "sistema": true
+    },
+    {
+      "key": "seguranca",
+      "id": 102,
+      "nome": "Segurança",
+      "rota": "",
+      "tipo": "M",
+      "pai": "servicos",
+      "ordem": 1,
+      "icone": "SECURITY",
+      "admin_level": 50,
+      "sistema": true
+    },
+    {
+      "key": "usuarios",
+      "id": 250,
+      "nome": "Usuários",
+      "rota": "usuarios",
+      "tipo": "S",
+      "pai": "seguranca",
+      "ordem": 1,
+      "icone": "PEOPLE",
+      "admin_level": 50,
+      "sistema": true
+    },
+    {
+      "key": "perfis",
+      "id": 251,
+      "nome": "Perfis",
+      "rota": "perfis",
+      "tipo": "S",
+      "pai": "seguranca",
+      "ordem": 2,
+      "icone": "ADMIN_PANEL_SETTINGS",
+      "admin_level": 50,
+      "sistema": true
+    },
+    {
+      "key": "menus",
+      "id": 252,
+      "nome": "Menus",
+      "rota": "menus",
+      "tipo": "S",
+      "pai": "seguranca",
+      "ordem": 4,
+      "icone": "MENU",
+      "admin_level": 100,
+      "sistema": true
+    },
+    {
+      "key": "perfil_menu",
+      "id": null,
+      "nome": "Perfil x Menu",
+      "rota": "perfil_menu",
+      "tipo": "S",
+      "pai": "seguranca",
+      "ordem": 3,
+      "icone": "ACCOUNT_TREE",
+      "admin_level": 50,
+      "sistema": true
+    },
+    {
+      "key": "sistema",
+      "id": null,
+      "nome": "Sistema",
+      "rota": "",
+      "tipo": "M",
+      "pai": "servicos",
+      "ordem": 90,
+      "icone": "SETTINGS",
+      "admin_level": 50,
+      "sistema": true
+    },
+    {
+      "key": "auditoria",
+      "id": null,
+      "nome": "Auditoria",
+      "rota": "auditoria",
+      "tipo": "S",
+      "pai": "sistema",
+      "ordem": 1,
+      "icone": "HISTORY",
+      "admin_level": 50,
+      "sistema": true
+    }
+  ],
+  "permissoes": [
+    {
+      "perfil": "ROOT",
+      "menus": "*",
+      "ver": true,
+      "editar": true,
+      "excluir": true
+    },
+    {
+      "perfil": "ADMIN",
+      "menus": [
+        "dashboard",
+        "usuarios",
+        "perfis",
+        "perfil_menu",
+        "auditoria"
+      ],
+      "ver": true,
+      "editar": true,
+      "excluir": true
+    }
+  ],
+  "sedes": [
+    {
+      "nome": "Porto Alegre",
+      "municipio": "Porto Alegre",
+      "uf": "RS",
+      "pais": "Brasil",
+      "operacional": true,
+      "fantasma": false,
+      "observacoes": "Sede inicial criada pela instalação."
+    },
+    {
+      "nome": "Santa Cruz do Sul",
+      "municipio": "Santa Cruz do Sul",
+      "uf": "RS",
+      "pais": "Brasil",
+      "operacional": true,
+      "fantasma": false,
+      "observacoes": "Sede inicial criada pela instalação."
+    },
+    {
+      "nome": "Manutenção",
+      "municipio": "Porto Alegre",
+      "uf": "RS",
+      "pais": "Brasil",
+      "operacional": false,
+      "fantasma": true,
+      "observacoes": "Sede fantasma para recursos em manutenção."
+    }
+  ],
+  "loc_tipos": [],
+  "loc_estruturas": [
+    "Banheiros",
+    "Cozinha",
+    "Estacionamento",
+    "Palco"
+  ]
+}
