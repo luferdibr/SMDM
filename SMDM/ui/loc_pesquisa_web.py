@@ -1,9 +1,15 @@
+import threading
+
 import flet as ft
 
 from services.local_pesquisa_web_service import (
     COLUNAS_PESQUISA_WEB,
     STATUS_PESQUISA,
+    carregar_termos_pesquisa_web,
+    coletar_locais_web_fluxo,
     listar_pesquisas,
+    listar_municipios_prioritarios_sedes,
+    listar_ultimas_pesquisas,
     obter_pesquisa,
     salvar_pesquisa,
     transferir_pesquisa_para_local,
@@ -34,6 +40,13 @@ def dropdown_status():
 def pesquisa_web_base_view(page, modo="pesquisa"):
     pesquisa_id = {"valor": None}
     lista = ft.Column(spacing=6)
+    ultimos_pesquisados = ft.Column(spacing=4)
+    pesquisa_estado = {
+        "rodando": False,
+        "parar": False,
+    }
+    municipios_rs = listar_municipios_prioritarios_sedes()
+    termos_pesquisa = carregar_termos_pesquisa_web()
 
     txt_nome = campo("Nome do local", 320)
     txt_tipo = campo("Tipo sugerido", 220)
@@ -46,6 +59,47 @@ def pesquisa_web_base_view(page, modo="pesquisa"):
     txt_facebook = campo("Facebook", 260)
     txt_endereco = campo("Endereço", 520)
     txt_pontuacao = campo("Pontuação", 120)
+    ddl_municipio_coleta = ft.Dropdown(
+        label="Município RS",
+        width=260,
+        options=[
+            ft.dropdown.Option(municipio)
+            for municipio in municipios_rs
+        ],
+    )
+    ddl_termo_coleta = ft.Dropdown(
+        label="Termo de busca",
+        width=300,
+        value=termos_pesquisa[0] if termos_pesquisa else None,
+        options=[
+            ft.dropdown.Option(termo)
+            for termo in termos_pesquisa
+        ],
+    )
+    txt_limite_coleta = campo("Limite", 90)
+    txt_limite_coleta.value = "5"
+    lbl_status_coleta = ft.Text(
+        "Pesquisa parada.",
+        size=12,
+        color=ft.Colors.GREY_700,
+    )
+    indicador_coleta = ft.Container(
+        width=12,
+        height=12,
+        border_radius=6,
+        bgcolor=ft.Colors.GREY_400,
+        tooltip="Pesquisa parada",
+    )
+    lbl_indicador_coleta = ft.Text(
+        "PARADO",
+        size=12,
+        weight=ft.FontWeight.BOLD,
+        color=ft.Colors.GREY_700,
+    )
+    btn_start_stop = ft.ElevatedButton(
+        "Start",
+        icon=ft.Icons.PLAY_ARROW,
+    )
     ddl_status = dropdown_status()
     chk_duplicidade = ft.Checkbox(label="Possível duplicidade")
     chk_descartado = ft.Checkbox(label="Descartado")
@@ -55,6 +109,102 @@ def pesquisa_web_base_view(page, modo="pesquisa"):
         page.snack_bar = ft.SnackBar(ft.Text(texto))
         page.snack_bar.open = True
         page.update()
+
+    def atualizar_controles_coleta():
+        if pesquisa_estado["rodando"]:
+            btn_start_stop.text = "Stop"
+            btn_start_stop.icon = ft.Icons.STOP
+            btn_start_stop.bgcolor = ft.Colors.RED_600
+            btn_start_stop.color = ft.Colors.WHITE
+            indicador_coleta.bgcolor = ft.Colors.GREEN_600
+            indicador_coleta.tooltip = "Pesquisa em execução"
+            lbl_indicador_coleta.value = "RODANDO"
+            lbl_indicador_coleta.color = ft.Colors.GREEN_700
+            lbl_status_coleta.value = "Pesquisa em execução."
+            ddl_municipio_coleta.disabled = True
+            ddl_termo_coleta.disabled = True
+            txt_limite_coleta.disabled = True
+        else:
+            btn_start_stop.text = "Start"
+            btn_start_stop.icon = ft.Icons.PLAY_ARROW
+            btn_start_stop.bgcolor = None
+            btn_start_stop.color = None
+            indicador_coleta.bgcolor = ft.Colors.GREY_400
+            indicador_coleta.tooltip = "Pesquisa parada"
+            lbl_indicador_coleta.value = "PARADO"
+            lbl_indicador_coleta.color = ft.Colors.GREY_700
+            ddl_municipio_coleta.disabled = False
+            ddl_termo_coleta.disabled = False
+            txt_limite_coleta.disabled = False
+
+    def atualizar_ultimos_pesquisados():
+        ultimos_pesquisados.controls.clear()
+        rows = listar_ultimas_pesquisas(5)
+
+        if not rows:
+            ultimos_pesquisados.controls.append(
+                ft.Text(
+                    "Nenhum local gravado na tabela de pesquisa.",
+                    size=12,
+                    color=ft.Colors.GREY_600,
+                )
+            )
+            return
+
+        for row in rows:
+            status = str(row[5] or "-")
+            cor_status = ft.Colors.GREY_600
+
+            if status == "APTO_TRANSFERENCIA":
+                cor_status = ft.Colors.GREEN_700
+            elif status == "NAO_SERVE":
+                cor_status = ft.Colors.RED_700
+            elif status == "PONTUACAO_BAIXA":
+                cor_status = ft.Colors.ORANGE_700
+
+            ultimos_pesquisados.controls.append(
+                ft.Container(
+                    padding=ft.padding.symmetric(vertical=2),
+                    content=ft.Row(
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Container(
+                                width=8,
+                                height=8,
+                                border_radius=4,
+                                bgcolor=cor_status,
+                            ),
+                            ft.Text(
+                                str(row[1] or "-"),
+                                expand=True,
+                                size=12,
+                                no_wrap=True,
+                            ),
+                            ft.Text(
+                                f"{row[2] or '-'} / {row[3] or '-'}",
+                                width=145,
+                                size=12,
+                                color=ft.Colors.GREY_700,
+                                no_wrap=True,
+                            ),
+                            ft.Text(
+                                str(row[4] or 0),
+                                width=40,
+                                size=11,
+                                color=ft.Colors.GREY_700,
+                            ),
+                            ft.Text(
+                                status,
+                                width=120,
+                                size=10,
+                                color=cor_status,
+                                no_wrap=True,
+                            ),
+                        ],
+                    ),
+                )
+            )
 
     def limpar_formulario(e=None):
         pesquisa_id["valor"] = None
@@ -132,6 +282,7 @@ def pesquisa_web_base_view(page, modo="pesquisa"):
                 dados_formulario(),
             )
             carregar_lista()
+            atualizar_ultimos_pesquisados()
             mostrar("Pesquisa web salva.")
         except Exception as ex:
             mostrar(str(ex))
@@ -143,6 +294,86 @@ def pesquisa_web_base_view(page, modo="pesquisa"):
             mostrar(f"Pesquisa transferida para o local {local_id}.")
         except Exception as ex:
             mostrar(str(ex))
+
+    def pesquisar_fluxo_background(municipio, termo, limite):
+        try:
+            def deve_parar():
+                return bool(pesquisa_estado["parar"])
+
+            def ao_pesquisar(item):
+                if item.get("status") == "INCLUIDO":
+                    atualizar_ultimos_pesquisados()
+                    page.update()
+
+            resultado = coletar_locais_web_fluxo(
+                municipio=municipio,
+                uf="RS",
+                termos=[termo],
+                limite_por_termo=limite,
+                deve_parar=deve_parar,
+                ao_pesquisar=ao_pesquisar,
+            )
+
+            carregar_lista()
+
+            if resultado.get("interrompido"):
+                lbl_status_coleta.value = (
+                    "Pesquisa interrompida: "
+                    f"{resultado['inseridos']} incluído(s), "
+                    f"{resultado['ignorados']} ignorado(s)."
+                )
+            else:
+                lbl_status_coleta.value = (
+                    "Pesquisa concluída: "
+                    f"{resultado['inseridos']} incluído(s), "
+                    f"{resultado['ignorados']} ignorado(s)."
+                )
+        except Exception as ex:
+            lbl_status_coleta.value = str(ex)
+        finally:
+            pesquisa_estado["rodando"] = False
+            pesquisa_estado["parar"] = False
+            atualizar_controles_coleta()
+            page.update()
+
+    def alternar_pesquisa(e=None):
+        if pesquisa_estado["rodando"]:
+            pesquisa_estado["parar"] = True
+            lbl_status_coleta.value = "Parando pesquisa..."
+            page.update()
+            return
+
+        municipio = (
+            ddl_municipio_coleta.value
+            or txt_municipio.value
+        )
+        termo = ddl_termo_coleta.value
+
+        if not municipio:
+            mostrar("Informe o município para pesquisar.")
+            return
+
+        if not termo:
+            mostrar("Selecione um termo de busca.")
+            return
+
+        pesquisa_estado["rodando"] = True
+        pesquisa_estado["parar"] = False
+        atualizar_controles_coleta()
+        atualizar_ultimos_pesquisados()
+        page.update()
+
+        threading.Thread(
+            target=pesquisar_fluxo_background,
+            args=(
+                municipio,
+                termo,
+                txt_limite_coleta.value,
+            ),
+            daemon=True,
+        ).start()
+
+    btn_start_stop.on_click = alternar_pesquisa
 
     def criar_linha(row):
         id_pesquisa = row[0]
@@ -226,6 +457,7 @@ def pesquisa_web_base_view(page, modo="pesquisa"):
     }.get(modo, "")
 
     limpar_formulario()
+    atualizar_ultimos_pesquisados()
     carregar_lista()
 
     return ft.Column(
@@ -258,6 +490,48 @@ def pesquisa_web_base_view(page, modo="pesquisa"):
                         ],
                     ),
                 ],
+            ),
+            ft.Divider(),
+            ft.ResponsiveRow(
+                spacing=8,
+                run_spacing=8,
+                controls=[
+                    ft.Container(ddl_municipio_coleta, col={"md": 3}),
+                    ft.Container(ddl_termo_coleta, col={"md": 4}),
+                    ft.Container(txt_limite_coleta, col={"md": 1}),
+                    ft.Container(
+                        btn_start_stop,
+                        col={"md": 1},
+                    ),
+                    ft.Container(
+                        ft.Row(
+                            spacing=6,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                indicador_coleta,
+                                lbl_indicador_coleta,
+                            ],
+                        ),
+                        col={"md": 2},
+                    ),
+                    ft.Container(lbl_status_coleta, col={"md": 2}),
+                ],
+            ),
+            ft.Container(
+                padding=8,
+                border=ft.border.all(1, ft.Colors.GREY_200),
+                border_radius=4,
+                content=ft.Column(
+                    spacing=4,
+                    controls=[
+                        ft.Text(
+                            "Últimos 5 pesquisados",
+                            size=13,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                        ultimos_pesquisados,
+                    ],
+                ),
             ),
             ft.Divider(),
             ft.ResponsiveRow(
